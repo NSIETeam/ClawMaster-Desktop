@@ -1,321 +1,63 @@
-name: ClawMaster Desktop Release
+name: Windows installed desktop validation
 
 on:
-  push:
-    tags:
-      - desktop-v*
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing desktop-v* tag to rebuild and publish
-        required: true
-        default: desktop-v0.2.0-beta.6
 
 permissions:
   contents: read
 
-concurrency:
-  group: desktop-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-  cancel-in-progress: false
-
-env:
-  NODE_VERSION: '24'
-  DSH_TELEMETRY_DISABLED: '1'
-  DSH_DESKTOP_BUILD_MODE: release
-  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-
 jobs:
-  build:
-    name: Build ${{ matrix.asset_platform }}-${{ matrix.asset_arch }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-            bundles: nsis
-            asset_platform: windows
-            asset_arch: x64
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: app,dmg
-            asset_platform: macos
-            asset_arch: x64
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            bundles: app,dmg
-            asset_platform: macos
-            asset_arch: arm64
-          - runner: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            bundles: appimage,deb
-            asset_platform: linux
-            asset_arch: x64
+  installed-desktop:
+    runs-on: windows-2025
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          ref: ${{ env.RELEASE_TAG }}
-          fetch-depth: 0
-          persist-credentials: false
-
+          node-version: 22.19.0
       - uses: pnpm/action-setup@v4
         with:
-          dest: ${{ runner.temp }}/setup-pnpm
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Validate release version
+          version: 11.7.0
+          run_install: false
+      - name: Parse native script and reject invalid observations
         shell: pwsh
         run: |
-          $version = (Get-Content apps/desktop-tauri/package.json | ConvertFrom-Json).version
-          $tauriVersion = (Get-Content apps/desktop-tauri/src-tauri/tauri.conf.json | ConvertFrom-Json).version
-          if ($env:RELEASE_TAG -ne "desktop-v$version" -or $tauriVersion -ne $version) {
-            throw "Release tag and desktop versions must match"
-          }
-
-      - name: Install Linux bundle dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -yq libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils musl-tools
-
-      - name: Require clean release source
-        run: node apps/desktop-tauri/scripts/build-provenance.mjs
-
-      - name: Install Rust target
-        run: rustup target add ${{ matrix.target }}
-
-      - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install product frontend build dependencies
-        shell: bash
-        run: |
-          npm ci --prefix frontends/dsh --ignore-scripts
-          npm ci --prefix frontends/office --ignore-scripts
-          npm ci --prefix frontends/notes --ignore-scripts
-
-      - name: Verify Notes storage, approval and rendered client
-        shell: bash
-        run: |
-          npm test --prefix frontends/notes
-          npm run typecheck --prefix frontends/notes
-          pnpm run test:notes-client
-
-      - name: Build ClawMaster harness
-        run: pnpm --dir apps/desktop-tauri run build:harness
-
-      - name: Verify collapsed process details and approvals
-        run: pnpm exec vitest run packages/client/ui-chat/tests/clawmaster-disclosures.client.spec.tsx packages/client/ui-chat/tests/chat-branch-tails.client.spec.tsx packages/client/ui-chat/tests/chat-view.client.spec.tsx packages/client/ui-tool/tests/terminal-card.client.spec.tsx packages/client/ui-tool/tests/tool-row.client.spec.tsx packages/client/ui-chat/tests/turn-process-running.client.spec.ts packages/client/ui-chat/tests/conversation-node-definitions.client.spec.ts packages/client/ui-chat/tests/system-prompt-row.client.spec.tsx packages/client/ui-chat/tests/approval-command.client.spec.tsx packages/client/ui-approval/tests/ui-approval.client.spec.tsx
-
-      - name: Verify provenance and plugin rejection cases
-        shell: bash
-        run: |
-          pnpm --dir apps/desktop-tauri run test:bundle
-          node --test apps/desktop-tauri/sys-prompt/tests/assembly.test.mjs
-
-      - name: Verify Linux package permission rejection cases
-        if: runner.os == 'Linux'
-        run: node --test apps/desktop-tauri/scripts/verify-linux-package.test.mjs
-
-      - name: Build complete Linux sandbox binaries
-        if: runner.os == 'Linux'
-        run: node --import tsx/esm native/system/scripts/build.ts
-
-      - name: Prepare verified Office editor resources
-        run: node frontends/office/scripts/prepare-runtime.mjs
-
-      - name: Build desktop bundles
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: pnpm --dir apps/desktop-tauri exec tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} ${{ runner.os == 'Linux' && '--verbose' || '' }}
-
-      - name: Verify prepared payload
-        run: node apps/desktop-tauri/scripts/bundle-harness-source.mjs --check
-
-      - name: Verify macOS signature
-        if: runner.os == 'macOS'
-        run: codesign --verify --deep --strict apps/desktop-tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos/ClawMaster.app
-
-      - name: Verify extracted Linux installers and Host restart
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euo pipefail
-          task_bundle="$GITHUB_WORKSPACE/apps/desktop-tauri/src-tauri/target/${{ matrix.target }}/release/bundle"
-          task_root=$(mktemp -d "$RUNNER_TEMP/ClawMaster 验收 # XXXXXX")
-          trap 'rm -rf "$task_root"' EXIT
-          task_appimage=$(find "$task_bundle/appimage" -maxdepth 1 -name '*.AppImage' -type f -print -quit)
-          task_deb=$(find "$task_bundle/deb" -maxdepth 1 -name '*.deb' -type f -print -quit)
-          test -n "$task_appimage" && test -n "$task_deb"
-          mkdir "$task_root/appimage" "$task_root/deb"
-          (cd "$task_root/appimage" && "$task_appimage" --appimage-extract > /dev/null)
-          dpkg-deb --extract "$task_deb" "$task_root/deb"
-          for task_format in appimage deb; do
-            task_extracted="$task_root/$task_format"
-            if [ "$task_format" = appimage ]; then task_extracted="$task_extracted/squashfs-root"; fi
-            task_payload=$(node apps/desktop-tauri/scripts/verify-linux-package.mjs --package-root "$task_extracted" --prepared-root apps/desktop-tauri/bundled/harness --arch x64)
-            task_smoke="$task_root/production $task_format"
-            cp -a "$task_payload" "$task_smoke"
-            (cd "$task_smoke" && pnpm install --prod --frozen-lockfile)
-            DSH_DESKTOP_SMOKE_ROOT="$task_smoke" node --test apps/desktop-tauri/scripts/desktop-plugin-install.test.mjs apps/desktop-tauri/scripts/harness-startup.test.mjs
-          done
-
-      - name: Verify fresh production installation and Host restart
-        if: runner.os != 'Linux'
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $PWD 'apps/desktop-tauri/scripts/verify-windows-native.ps1'),
+            [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
+          node --test apps/desktop-tauri/scripts/windows-native-evidence.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Native evidence tests failed.' }
+      - name: Download and verify the public beta.6 Windows package
         shell: pwsh
-        run: |
-          $smokeRoot = Join-Path $env:RUNNER_TEMP ("ClawMaster 验收 # " + [guid]::NewGuid().ToString())
-          Copy-Item apps/desktop-tauri/bundled/harness $smokeRoot -Recurse
-          try {
-            Push-Location $smokeRoot
-            try {
-              pnpm install --prod --frozen-lockfile
-              if ($LASTEXITCODE -ne 0) { throw "Production dependency installation failed" }
-            } finally { Pop-Location }
-            $env:DSH_DESKTOP_SMOKE_ROOT = $smokeRoot
-            node --test apps/desktop-tauri/scripts/desktop-plugin-install.test.mjs apps/desktop-tauri/scripts/harness-startup.test.mjs
-            if ($LASTEXITCODE -ne 0) { throw "Packaged Host acceptance failed" }
-          } finally { Remove-Item $smokeRoot -Recurse -Force }
-
-      - name: Stage release assets
-        shell: pwsh
-        env:
-          ASSET_ARCH: ${{ matrix.asset_arch }}
-          ASSET_PLATFORM: ${{ matrix.asset_platform }}
-          RUST_TARGET: ${{ matrix.target }}
-        run: |
-          $version = (Get-Content apps/desktop-tauri/package.json | ConvertFrom-Json).version
-          $bundleRoot = "apps/desktop-tauri/src-tauri/target/$env:RUST_TARGET/release/bundle"
-          New-Item -ItemType Directory -Force release-assets | Out-Null
-          Copy-Item apps/desktop-tauri/bundled/harness/.bundle-manifest.json "release-assets/clawmaster-$version-$env:ASSET_PLATFORM-$env:ASSET_ARCH-build.json"
-
-          if ($env:ASSET_PLATFORM -eq 'windows') {
-            $source = Get-ChildItem $bundleRoot -Recurse -File -Filter '*-setup.exe' | Select-Object -First 1
-            if (-not $source) { throw "NSIS installer not found under $bundleRoot" }
-            $signature = Get-Item "$($source.FullName).sig" -ErrorAction Stop
-            $destination = "release-assets/clawmaster-$version-windows-$env:ASSET_ARCH-setup.exe"
-            Copy-Item $source.FullName $destination
-            Copy-Item $signature.FullName "$destination.sig"
-          }
-          elseif ($env:ASSET_PLATFORM -eq 'macos') {
-            $source = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.dmg' | Select-Object -First 1
-            $updater = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.app.tar.gz' | Select-Object -First 1
-            if (-not $source -or -not $updater) { throw "DMG or updater archive not found under $bundleRoot" }
-            $signature = Get-Item "$($updater.FullName).sig" -ErrorAction Stop
-            Copy-Item $source.FullName "release-assets/clawmaster-$version-macos-$env:ASSET_ARCH.dmg"
-            $updaterDestination = "release-assets/clawmaster-$version-macos-$env:ASSET_ARCH.app.tar.gz"
-            Copy-Item $updater.FullName $updaterDestination
-            Copy-Item $signature.FullName "$updaterDestination.sig"
-          }
-          else {
-            $appImage = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.AppImage' | Select-Object -First 1
-            $deb = Get-ChildItem $bundleRoot -Recurse -File -Filter '*.deb' | Select-Object -First 1
-            if (-not $appImage -or -not $deb) { throw "Linux AppImage or deb not found under $bundleRoot" }
-            $signature = Get-Item "$($appImage.FullName).sig" -ErrorAction Stop
-            $appImageDestination = "release-assets/clawmaster-$version-linux-$env:ASSET_ARCH.AppImage"
-            Copy-Item $appImage.FullName $appImageDestination
-            Copy-Item $signature.FullName "$appImageDestination.sig"
-            Copy-Item $deb.FullName "release-assets/clawmaster-$version-linux-$env:ASSET_ARCH.deb"
-          }
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: desktop-${{ matrix.asset_platform }}-${{ matrix.asset_arch }}
-          path: release-assets/*
-          if-no-files-found: error
-          retention-days: 14
-
-  release:
-    name: Publish GitHub Release
-    needs: build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-          fetch-depth: 1
-          persist-credentials: false
-
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: desktop-*
-          path: release-assets
-          merge-multiple: true
-
-      - name: Verify release asset set
-        shell: pwsh
-        run: |
-          $expected = @(
-            '*-windows-x64-setup.exe',
-            '*-windows-x64-setup.exe.sig',
-            '*-macos-x64.dmg',
-            '*-macos-x64.app.tar.gz',
-            '*-macos-x64.app.tar.gz.sig',
-            '*-macos-arm64.dmg',
-            '*-macos-arm64.app.tar.gz',
-            '*-macos-arm64.app.tar.gz.sig',
-            '*-linux-x64.AppImage',
-            '*-linux-x64.AppImage.sig',
-            '*-linux-x64.deb',
-            '*-windows-x64-build.json',
-            '*-macos-x64-build.json',
-            '*-macos-arm64-build.json',
-            '*-linux-x64-build.json'
-          )
-          foreach ($pattern in $expected) {
-            if (-not (Get-ChildItem release-assets -File -Filter $pattern)) {
-              throw "Missing release asset matching $pattern"
-            }
-          }
-          $commit = (git rev-parse HEAD).Trim()
-          $tree = (git rev-parse 'HEAD^{tree}').Trim()
-          $version = (Get-Content apps/desktop-tauri/package.json | ConvertFrom-Json).version
-          foreach ($file in Get-ChildItem release-assets -File -Filter '*-build.json') {
-            $manifest = Get-Content $file.FullName | ConvertFrom-Json
-            $build = $manifest.buildProvenance
-            if ($manifest.desktopVersion -ne $version -or $manifest.contentSha256 -notmatch '^[a-f0-9]{64}$' -or $build.schemaVersion -ne 1 -or $build.mode -ne 'release' -or $build.source.dirty -ne $false -or $build.source.dirtyFiles.Count -ne 0 -or $build.source.gitCommit -ne $commit -or $build.source.gitTree -ne $tree) {
-              throw "Build provenance does not match clean release source: $($file.Name)"
-            }
-          }
-
-      - name: Generate updater manifest
-        shell: pwsh
-        run: |
-          $version = (Get-Content apps/desktop-tauri/package.json | ConvertFrom-Json).version
-          $publishedAt = (Get-Date).ToUniversalTime().ToString('o')
-          node apps/desktop-tauri/scripts/generate-updater-manifest.mjs `
-            --assets-dir release-assets `
-            --output release-assets/latest.json `
-            --version $version `
-            --repository $env:GITHUB_REPOSITORY `
-            --release-tag $env:RELEASE_TAG `
-            --notes-file apps/desktop-tauri/release-notes.md `
-            --pub-date $publishedAt
-
-      - name: Record release checksums
-        run: |
-          cp apps/desktop-tauri/release-signing.pub release-assets/clawmaster-release-signing.pub
-          node apps/desktop-tauri/scripts/release-checksums.mjs release-assets
-
-      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/* --clobber
-            gh release edit "$RELEASE_TAG" --title "ClawMaster Desktop ${RELEASE_TAG#desktop-v}" --notes-file apps/desktop-tauri/release-notes.md --prerelease --latest=false
-          else
-            gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "ClawMaster Desktop ${RELEASE_TAG#desktop-v}" --notes-file apps/desktop-tauri/release-notes.md --prerelease --latest=false
-          fi
+          $downloadRoot = Join-Path $env:RUNNER_TEMP ('native-published-' + [Guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $downloadRoot | Out-Null
+          gh release download desktop-v0.2.0-beta.6 --repo NSIETeam/ClawMaster-Desktop --dir $downloadRoot --pattern clawmaster-0.2.0-beta.6-windows-x64-setup.exe --pattern clawmaster-0.2.0-beta.6-windows-x64-build.json --pattern SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Public release download failed.' }
+          $sumsPath = Join-Path $downloadRoot 'SHA256SUMS.txt'
+          if ((Get-FileHash $sumsPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne '267971e9a91a8e9ccb8457e55e598dc3bf4d5b099c1873f22d3411c9f83faf57') { throw 'Published checksums file differs from the release asset digest.' }
+          $sums = Get-Content -LiteralPath $sumsPath
+          foreach ($name in @('clawmaster-0.2.0-beta.6-windows-x64-setup.exe', 'clawmaster-0.2.0-beta.6-windows-x64-build.json')) {
+            $rows = @($sums | Where-Object { $_ -match ('^[a-f0-9]{64}  ' + [regex]::Escape($name) + '$') })
+            if ($rows.Count -ne 1) { throw "Missing or duplicate checksum for $name" }
+            if ((Get-FileHash (Join-Path $downloadRoot $name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $rows[0].Substring(0, 64)) { throw "Downloaded bytes differ: $name" }
+          }
+          Copy-Item (Join-Path $downloadRoot 'clawmaster-0.2.0-beta.6-windows-x64-build.json') (Join-Path $downloadRoot '.bundle-manifest.json')
+          $manifest = Get-Content (Join-Path $downloadRoot '.bundle-manifest.json') -Raw | ConvertFrom-Json
+          if ($manifest.buildProvenance.source.gitCommit -ne '197bb5c07371fb5eafd58425f731351cd84d4c3f') { throw 'Unexpected beta.6 source commit.' }
+          "NATIVE_PUBLISHED_ROOT=$downloadRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install, open, close and reopen the published desktop
+        shell: pwsh
+        run: |
+          & ./apps/desktop-tauri/scripts/verify-windows-native.ps1 -Installer (Join-Path $env:NATIVE_PUBLISHED_ROOT 'clawmaster-0.2.0-beta.6-windows-x64-setup.exe') -PreparedRoot $env:NATIVE_PUBLISHED_ROOT -ExpectedVersion '0.2.0-beta.6' -OutputPath (Join-Path $PWD 'native-validation/windows-native-acceptance.json')
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-native-beta6-acceptance
+          path: native-validation/*.json
+          if-no-files-found: warn
