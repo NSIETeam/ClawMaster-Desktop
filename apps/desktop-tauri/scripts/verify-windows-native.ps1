@@ -31,7 +31,7 @@ $PreparedRoot = (Resolve-Path -LiteralPath $PreparedRoot).Path
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 $preparedManifest = Join-Path $PreparedRoot '.bundle-manifest.json'
 if (-not (Test-Path -LiteralPath $preparedManifest -PathType Leaf)) { throw 'Prepared release manifest is missing.' }
-$node = (Get-Command node -CommandType Application).Source
+$node = (Get-Command node -CommandType Application | Select-Object -First 1).Source
 $appDataRoot = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'DeepSeek Harness'
 $defaultDshHome = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh'
 foreach ($path in @($appDataRoot, $defaultDshHome)) {
