@@ -114,6 +114,15 @@ describe('application entrypoints', () => {
     ])
   })
 
+  it('rejects a ClawMaster wrapper that bypasses the DSH launcher', () => {
+    const root = fixture()
+    write(root, 'package.json', JSON.stringify({ scripts: { clawmaster: 'node scripts/clawmaster.mjs' } }))
+    write(root, 'scripts/clawmaster.mjs', "spawn('node', ['packages/example/app/src/bin.ts'])\n")
+    expect(applicationEntrypointViolations(root)).toHaveLength(2)
+    write(root, 'scripts/clawmaster.mjs', "spawn('node', ['apps/cli/src/bin.ts', '--profile', 'clawmaster-control'])\n")
+    expect(applicationEntrypointViolations(root)).toEqual([])
+  })
+
   it('rejects a new root demo until its launch role is classified', () => {
     const root = fixture()
     write(root, 'package.json', JSON.stringify({ scripts: { 'demo:new-app': 'dsh --profile new-app' } }))

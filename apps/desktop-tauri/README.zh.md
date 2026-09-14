@@ -6,7 +6,7 @@
 
 桌面包版本：**0.2.0**。`build:harness` 选择 ClawMaster 客户端 profile，在插件加载前设置浏览器标题，并把已有产品图标写入构建后的 favicon 与 PWA manifest。构建记录最终客户端摘要；打包拒绝标题、profile、manifest 名称、图标或摘要不符的产物。上游 Web 资源源码保留默认品牌。
 
-Tauri 包名为 `@deepseek-ai/dsh-desktop-tauri`，与上游 Electron 应用独立。Host 启动地址只在内存中传给独立 WebView，由上游认证流程签发登录 cookie。应用命令归本地外壳所有；回环 Host 内容仅获得窗口拖动与双击最大化权限。启动日志不记录认证令牌。裁剪包包含 `native/system`，并仅在裁剪树中允许开发工具补丁未使用；实际补丁应用失败仍会阻止安装。
+Tauri 包名为 `@deepseek-ai/dsh-desktop-tauri`，与上游 Electron 应用独立。原生外壳在内存中将 Host 启动地址传给独立 WebView，由上游认证流程签发登录 cookie。ClawMaster 控制桥接还会为同一操作系统用户的 [CLI](#control-cli) 发布私有进程登录记录；该记录授予完整 Host 认证权限，不是只读访问。应用命令归本地外壳所有；回环 Host 内容仅获得窗口拖动与双击最大化权限。启动日志不记录认证令牌。裁剪包包含 `native/system`，并仅在裁剪树中允许开发工具补丁未使用；实际补丁应用失败仍会阻止安装。
 
 <a id="architecture"></a>
 ## 架构
@@ -171,6 +171,20 @@ pnpm run dev
 ```
 
 **已安装应用：**从 GitHub Releases 选择对应系统的安装包。首次启动在启动页扫描本机环境、选择已有 DSH 主目录，并安装缺失的工具或依赖，完成后打开 Web 界面。
+
+<a id="control-cli"></a>
+## 控制 CLI
+
+[ClawMaster Control CLI](../../frontends/control/README.zh.md)使用同一操作系统账号和 `DSH_HOME` 连接运行中的 Host。[桌面策略层](defaults/cordis.patch.yml)包含其 Host 桥接；独立的 `clawmaster-control` profile 只运行命令客户端。已安装应用必须包含桥接，才能响应这些命令。构建 CLI 不会更新或重启已安装应用。
+
+在已安装开发依赖的仓库中，构建组件并查看帮助：
+
+```sh
+npm --prefix frontends/control run build
+pnpm clawmaster --help
+```
+
+使用 `pnpm clawmaster status --json` 检查连接，使用 `pnpm clawmaster sessions --running --json` 找到活动会话。受支持的已安装运行时写法是 `dsh --profile clawmaster-control COMMAND`。组件 README 负责消息提交、取消、故障恢复和私有连接记录的具体说明。审批继续通过 Host 已有的交互流程处理；消息被接受不代表任务已经完成。
 
 ## 脚本
 

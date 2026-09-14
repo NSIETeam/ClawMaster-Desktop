@@ -8,8 +8,10 @@ import {
   existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync,
   unlinkSync, writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
@@ -360,6 +362,56 @@ describe('healProfilesModuleFallback', () => {
       else writeFileSync(entry, '')
       await expect(healProfilesModuleFallback({ installAnchor: anchor, home })).rejects.toThrow('is not a symlink')
     }
+  })
+
+  it('loads a selected dev-only installation bundle from the profile and cleans its owned links', async () => {
+    const anchor = stageInstallation({ 'dev-bundle': { patch: '- insert:\n    - id: dev\n      name: dev-bundle\n' } })
+    const manifest = JSON.parse(readFileSync(anchor, 'utf8')) as Record<string, unknown>
+    writeFileSync(anchor, JSON.stringify({ ...manifest, dependencies: {}, devDependencies: { 'dev-bundle': '0.0.0' } }))
+    const home = tmp()
+    const dir = resolveProfileDir('dev', home)
+    initProfile(dir, ['dev-bundle'])
+    const profile = loadProfile('t', 'dev', anchor, home)
+    expect(profile.layers.map(layer => layer.packageName)).toEqual(['dev-bundle'])
+
+    await healProfilesModuleFallback({ installAnchor: anchor, profile, home })
+
+    const resolved = createRequire(join(dir, 'package.json')).resolve('dev-bundle')
+    await expect(import(pathToFileURL(resolved).href)).resolves.toMatchObject({ packageName: 'dev-bundle' })
+    expect(existsSync(join(home, 'profiles', 'node_modules', 'dev-bundle'))).toBe(false)
+    await healProfilesModuleFallback({ installAnchor: anchor, profile: { ...profile, layers: [] }, home })
+    expect(existsSync(join(dir, 'node_modules', 'dev-bundle'))).toBe(false)
+    expect(existsSync(join(dir, '.dsh-module-fallback', 'node_modules', 'dev-bundle'))).toBe(false)
+  })
+
+  it.each(['directory', 'symlink'] as const)('preserves a pnpm-managed selected bundle %s during healing and cleanup', async (kind) => {
+    const installationAnchor = stageInstallation({})
+    const bundleAnchor = stageInstallation({}, 'selected-bundle')
+    const home = tmp()
+    const profile = stageProfile(home, 'managed', bundleAnchor)
+    const managedEntry = join(profile.dir, 'node_modules', 'selected-bundle')
+    const managedTarget = kind === 'directory' ? managedEntry : join(tmp(), 'selected-bundle')
+    mkdirSync(managedTarget, { recursive: true })
+    writeFileSync(join(managedTarget, 'package.json'), JSON.stringify({ name: 'selected-bundle', type: 'module', main: './index.js' }))
+    writeFileSync(join(managedTarget, 'index.js'), 'export const source = "pnpm"\n')
+    if (kind === 'symlink') {
+      mkdirSync(join(managedEntry, '..'), { recursive: true })
+      symlinkSync(managedTarget, managedEntry, 'junction')
+    }
+    const assertManagedEntry = async (): Promise<void> => {
+      expect(lstatSync(managedEntry).isSymbolicLink()).toBe(kind === 'symlink')
+      const resolved = createRequire(join(profile.dir, 'package.json')).resolve('selected-bundle')
+      expect(realpathSync(resolved)).toBe(realpathSync(join(managedTarget, 'index.js')))
+      await expect(import(pathToFileURL(resolved).href)).resolves.toMatchObject({ source: 'pnpm' })
+    }
+
+    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile, home })
+    await assertManagedEntry()
+    const ownedLink = join(profile.dir, '.dsh-module-fallback', 'node_modules', 'selected-bundle')
+    expect(existsSync(ownedLink)).toBe(true)
+    await healProfilesModuleFallback({ installAnchor: installationAnchor, profile: { ...profile, layers: [] }, home })
+    expect(existsSync(ownedLink)).toBe(false)
+    await assertManagedEntry()
   })
 
   it('keeps selected bundle closures profile-local without overriding installation packages', async () => {

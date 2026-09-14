@@ -1,0 +1,34 @@
+{
+  "status": {
+    "human": "ClawMaster 已连接 · 桌面 0.2.0 · Host 12\n",
+    "json": "{\"connected\":true,\"runtime\":{\"schemaVersion\":1,\"status\":\"ready\",\"runId\":\"run-fixture\",\"desktopVersion\":\"0.2.0\",\"harnessVersion\":\"0.1.5-rc.2\",\"desktopPid\":11,\"hostPid\":12,\"port\":1234,\"observedAtUnixMs\":1,\"contentSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}\n"
+  },
+  "sessions": {
+    "human": "one\t运行中\t/project\ntwo\t空闲\n",
+    "json": "{\"items\":[{\"sessionId\":\"one\",\"running\":true,\"updatedAt\":1,\"cwd\":\"/project\"},{\"sessionId\":\"two\",\"running\":false,\"updatedAt\":2}]}\n"
+  },
+  "emptySessions": {
+    "human": "没有匹配的会话。\n",
+    "json": "{\"items\":[]}\n"
+  },
+  "send": {
+    "human": "桌面已接收排队请求，尚未确认任务完成。\n请求 ID：8bbe2f8e-40eb-400d-a9bd-6f71b11fb2dd\n",
+    "json": "{\"accepted\":true,\"sessionId\":\"session-fixture\",\"requestId\":\"8bbe2f8e-40eb-400d-a9bd-6f71b11fb2dd\",\"mode\":\"queue\"}\n"
+  },
+  "steer": {
+    "human": "桌面已接收引导请求，尚未确认任务完成。\n请求 ID：8bbe2f8e-40eb-400d-a9bd-6f71b11fb2dd\n",
+    "json": "{\"accepted\":true,\"sessionId\":\"session-fixture\",\"requestId\":\"8bbe2f8e-40eb-400d-a9bd-6f71b11fb2dd\",\"mode\":\"steer\"}\n"
+  },
+  "cancel": {
+    "human": "已请求中断当前轮；待处理队列保留，尚未确认中断完成。\n",
+    "json": "{\"accepted\":true,\"sessionId\":\"one\",\"pendingInbox\":\"retained\"}\n"
+  },
+  "sendFailure": {
+    "human": "请求失败；桌面可能已接收操作，请先核对状态。\n重试请使用同一请求 ID：8bbe2f8e-40eb-400d-a9bd-6f71b11fb2dd\n",
+    "json": "{\"error\":{\"code\":\"request-failed\",\"message\":\"请求失败；桌面可能已接收操作，请先核对状态。\",\"requestId\":\"8bbe2f8e-40eb-400d-a9bd-6f71b11fb2dd\"}}\n"
+  },
+  "authenticationFailure": {
+    "human": "桌面认证失败，请重新打开桌面应用后连接。\n",
+    "json": "{\"error\":{\"code\":\"authentication-failed\",\"message\":\"桌面认证失败，请重新打开桌面应用后连接。\"}}\n"
+  }
+}

@@ -106,6 +106,12 @@ jobs:
       - name: Build ClawMaster harness
         run: pnpm --dir apps/desktop-tauri run build:harness
 
+      - name: Verify ClawMaster command client and private desktop connection
+        shell: bash
+        run: |
+          npm test --prefix frontends/control
+          npm run typecheck --prefix frontends/control
+
       - name: Verify WatchDog business writes and task admission
         shell: bash
         run: |

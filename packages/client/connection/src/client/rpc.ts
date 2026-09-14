@@ -1,4 +1,4 @@
-/** Browser caller for generic Connection unary RPC channels. */
+/** Fetch caller for generic Connection unary RPC channels. */
 
 import {
   RpcId,
@@ -23,10 +23,12 @@ export type RpcStreamOpen = (
 ) => AsyncIterable<unknown>
 
 /**
- * Create the browser-backed generic RPC caller.
+ * Create the generic HTTP RPC caller. Node consumers supply a fetch adapter
+ * that replaces the synthetic request origin and supplies their authenticated
+ * cookie; this caller never discovers a Host or reads credentials.
  * @param doFetch - transport override; defaults to the page's global fetch.
  * @param openStream - optional worker-local Gateway stream carrier.
- * @returns caller that owns request correlation and response-envelope validation.
+ * @returns caller that owns request correlation and response-envelope validation; endpoint result validation belongs to its consumer.
  */
 export function createWebConnectionRpc(doFetch?: RpcFetch, openStream?: RpcStreamOpen): ClientConnectionRpc {
   const send: RpcFetch = doFetch ?? ((input, init) => globalThis.fetch(input, init))

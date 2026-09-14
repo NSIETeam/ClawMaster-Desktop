@@ -287,6 +287,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@clawmaster/dsh-control':
+        specifier: workspace:*
+        version: link:../../frontends/control
       '@clawmaster/dsh-desktop-policy':
         specifier: workspace:*
         version: link:../desktop-defaults
@@ -1104,6 +1107,36 @@ importers:
   apps/desktop-defaults: {}
 
   apps/web: {}
+
+  frontends/control:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../vendor/cordis
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: link:../../packages/util/atomic-write
+        version: link:../../packages/util/atomic-write
+      '@deepseek-ai/dsh-brand':
+        specifier: link:../../packages/util/brand
+        version: link:../../packages/util/brand
+      '@deepseek-ai/dsh-client-connection':
+        specifier: link:../../packages/client/connection
+        version: link:../../packages/client/connection
+      '@deepseek-ai/dsh-cmdline':
+        specifier: link:../../packages/boot/cmdline
+        version: link:../../packages/boot/cmdline
+      '@deepseek-ai/dsh-home-paths':
+        specifier: link:../../packages/util/home-paths
+        version: link:../../packages/util/home-paths
+      '@deepseek-ai/dsh-util-values':
+        specifier: link:../../packages/util/values
+        version: link:../../packages/util/values
+      commander:
+        specifier: ^15.0.0
+        version: 15.0.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   frontends/dsh:
     dependencies:

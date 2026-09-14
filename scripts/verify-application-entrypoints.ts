@@ -47,8 +47,9 @@ const EXECUTABLE_SOURCE_ALLOWLIST = new Map<string, string>([
   ['python/sdk-runtime/runtime-bootstrap.mjs', 'private packaging-only runtime dispatcher'],
 ])
 
-/** Root demos are application wrappers and therefore must visibly select dsh. */
+/** Root product commands and demos must visibly select the DSH launcher. */
 const ROOT_DEMO_POLICIES = new Map<string, DemoPolicy>([
+  ['clawmaster', { kind: 'dsh-wrapper', wrapper: 'scripts/clawmaster.mjs' }],
   ['demo:ptc', { kind: 'dsh-wrapper', wrapper: 'scripts/demo-ptc.mjs' }],
   ['demo:inspector', { kind: 'dsh-direct' }],
 ])
@@ -138,7 +139,7 @@ function rootDemoViolations(root: string): string[] {
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as RootManifest
   const failures: string[] = []
   for (const [name, commandValue] of Object.entries(manifest.scripts ?? {}).sort(([left], [right]) => left.localeCompare(right))) {
-    if (!name.startsWith('demo:')) continue
+    if (!name.startsWith('demo:') && name !== 'clawmaster') continue
     const command = typeof commandValue === 'string' ? commandValue : ''
     const policy = ROOT_DEMO_POLICIES.get(name)
     if (policy === undefined) {

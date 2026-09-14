@@ -1,0 +1,4 @@
+# A command client only; the desktop owns the agent runtime.
+- insert:
+    - id: clawmaster-control-cli
+      name: '@clawmaster/dsh-control'

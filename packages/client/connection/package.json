@@ -22,6 +22,10 @@
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
+    "./web-rpc": {
+      "types": "./lib/types/web-rpc.d.ts",
+      "default": "./lib/web-rpc.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -41,6 +45,7 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "lib/web-rpc.js",
     "lib/types/**/*.d.ts"
   ],
   "peerDependencies": {

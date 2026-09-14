@@ -2,6 +2,9 @@
 - id: system-prompt
   disabled: true
 - insert:
+    - id: clawmaster-control-host
+      name: '@clawmaster/dsh-control/host'
+
     - id: clawmaster-sys-prompt
       name: clawmaster-sys-prompt
       config:

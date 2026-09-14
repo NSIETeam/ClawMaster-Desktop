@@ -34,6 +34,7 @@ const trimmedPackages = [
   'frontends/dsh',
   'frontends/notes',
   'frontends/office',
+  'frontends/control',
 ]
 
 /** Reviewed compatibility patches applied by pnpm before any desktop launch. */
@@ -233,6 +234,7 @@ export function withDesktopDependencies(manifest, workspaceOverrides = {}) {
       '@clawmaster/dsh-frontend': 'workspace:*',
       '@clawmaster/dsh-notes': 'workspace:*',
       '@clawmaster/dsh-office': 'workspace:*',
+      '@clawmaster/dsh-control': 'workspace:*',
     },
   }
 }
@@ -269,6 +271,10 @@ function assertBuiltArtifacts() {
     stdio: 'inherit',
   })
   execFileSync(process.execPath, [join(repoRoot, 'frontends/notes/scripts/build.mjs'), '--check'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  })
+  execFileSync(process.execPath, [join(repoRoot, 'frontends/control/scripts/build.mjs'), '--check'], {
     cwd: repoRoot,
     stdio: 'inherit',
   })
@@ -339,7 +345,7 @@ copyTree(join(repoRoot, 'apps', 'cli'), join(outRoot, 'apps', 'cli'))
 copyTree(join(repoRoot, 'apps', 'web'), join(outRoot, 'apps', 'web'))
 copyTree(join(desktopRoot, 'defaults'), join(outRoot, 'apps', 'desktop-defaults'))
 copyTree(join(desktopRoot, 'sys-prompt'), join(outRoot, 'apps', 'clawmaster-sys-prompt'))
-for (const frontend of ['dsh', 'notes', 'office']) {
+for (const frontend of ['dsh', 'notes', 'office', 'control']) {
   for (const name of ['package.json', 'dist', 'cordis.patch.yml', 'README.md', 'README.zh.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
     copyTree(join(repoRoot, 'frontends', frontend, name), join(outRoot, 'frontends', frontend, name))
   }

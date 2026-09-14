@@ -1,0 +1,55 @@
+{
+  "name": "@clawmaster/dsh-control",
+  "version": "0.1.0",
+  "description": "Command-line control of the running ClawMaster desktop Host",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "exports": {
+    ".": "./dist/cli.js",
+    "./host": "./dist/host.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --import tsx/esm --test tests/*.test.mjs tests/*.test.ts"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "workspace:^",
+    "@deepseek-ai/dsh-client-connection": "workspace:^",
+    "@deepseek-ai/dsh-cmdline": "workspace:^",
+    "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "commander": "^15.0.0",
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-brand": "workspace:^",
+    "@deepseek-ai/dsh-util-values": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:^",
+    "@deepseek-ai/dsh-host-webserver": "workspace:^",
+    "esbuild": "0.25.0",
+    "@types/node": "^22.20.0",
+    "typescript": "^6.0.3",
+    "tsx": "^4.22.4"
+  }
+}

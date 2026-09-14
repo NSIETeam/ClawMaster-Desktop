@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import test from 'node:test'
-import { DESKTOP_BUNDLES, DESKTOP_PLUGIN_VERSIONS, prepareDesktopProfile } from './desktop-defaults.mjs'
+import { CONTROL_BUNDLE, DESKTOP_BUNDLES, DESKTOP_PLUGIN_VERSIONS, prepareControlProfile, prepareDesktopProfile } from './desktop-defaults.mjs'
 
 const repository = fileURLToPath(new URL('../../..', import.meta.url))
 const require = createRequire(join(repository, 'apps/cli/package.json'))
@@ -29,10 +29,10 @@ function fixture(t) {
       ? '- insert:\n    - id: system-prompt\n      name: "@deepseek-ai/dsh-system-prompt"\n'
       : '[]\n')
   }
-  for (const name of DESKTOP_BUNDLES) {
+  for (const name of [...DESKTOP_BUNDLES, CONTROL_BUNDLE]) {
     const path = join(modules, name)
     mkdirSync(path, { recursive: true })
-    const hostOnly = name === '@openviking/dsh-memory-plugin'
+    const hostOnly = name === '@openviking/dsh-memory-plugin' || name === CONTROL_BUNDLE
     const policy = name === '@clawmaster/dsh-desktop-policy'
     writeFileSync(join(path, 'package.json'), JSON.stringify({
       name, type: 'module', version: DESKTOP_PLUGIN_VERSIONS[name] ?? '0.3.1',
@@ -45,7 +45,12 @@ function fixture(t) {
     writeFileSync(join(path, 'cordis.patch.yml'), '[]\n')
     writeFileSync(join(path, 'index.js'), 'export const name = "fixture"\n')
     writeFileSync(join(path, 'client.js'), 'export const name = "fixture-client"\n')
-    if (hostOnly) writeFileSync(join(path, 'cordis.patch.yml'), '- insert:\n    - id: openviking-memory\n      name: cordis:group\n      group: true\n      config:\n        - id: openviking-memory-runtime\n          name: "@openviking/dsh-memory-plugin"\n')
+    if (name === CONTROL_BUNDLE) {
+      mkdirSync(join(path, 'dist'))
+      writeFileSync(join(path, 'dist/cli.js'), 'export const name = "control-cli-fixture"\n')
+      writeFileSync(join(path, 'dist/host.js'), 'export const name = "control-host-fixture"\n')
+    }
+    if (name === '@openviking/dsh-memory-plugin') writeFileSync(join(path, 'cordis.patch.yml'), '- insert:\n    - id: openviking-memory\n      name: cordis:group\n      group: true\n      config:\n        - id: openviking-memory-runtime\n          name: "@openviking/dsh-memory-plugin"\n')
     if (name === '@xmanrui/dsh-im') writeFileSync(join(path, 'cordis.patch.yml'), '- insert:\n    - id: xmanrui-dsh-im\n      name: "@xmanrui/dsh-im"\n')
     if (policy) cpSync(fileURLToPath(new URL('../defaults/cordis.patch.yml', import.meta.url)), join(path, 'cordis.patch.yml'))
     if (name === 'dsh-routing-suite') {
@@ -189,4 +194,28 @@ test('Node preload prepares the profile once and consumes its inherited activati
   assert.equal(result.signal, null)
   assert.equal(result.status, 0, result.stderr)
   assert.equal(existsSync(join(f.profile, 'package.json')), true)
+})
+
+test('control profile contains only its client and leaves the Web profile absent', async t => {
+  const f = fixture(t)
+  await prepareControlProfile(f.root, f.home)
+  assert.equal(existsSync(f.profile), false)
+  const dir = join(f.home, 'profiles/clawmaster-control')
+  const file = join(dir, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  assert.deepEqual(manifest.dsh.profile, { bundles: [CONTROL_BUNDLE], patchReload: 'startup' })
+  writeFileSync(join(dir, 'cordis.patch.yml'), '# User patch\n[]\n')
+  await prepareControlProfile(f.root, f.home)
+  assert.equal(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8'), '# User patch\n[]\n')
+  manifest.dsh.profile.bundles.push('@deepseek-ai/dsh-base')
+  writeFileSync(file, JSON.stringify(manifest))
+  await assert.rejects(prepareControlProfile(f.root, f.home), /only the command client/)
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), manifest)
+})
+
+test('missing control artifacts reject desktop preparation before Web configuration is changed', async t => {
+  const f = fixture(t)
+  rmSync(join(f.modules, CONTROL_BUNDLE, 'dist/cli.js'))
+  await assert.rejects(prepareDesktopProfile(f.root, f.home), /ENOENT/)
+  assert.equal(existsSync(f.home), false)
 })

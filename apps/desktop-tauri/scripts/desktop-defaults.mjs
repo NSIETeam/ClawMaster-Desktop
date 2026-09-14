@@ -22,6 +22,34 @@ export const DESKTOP_BUNDLES = Object.freeze([
   '@clawmaster/dsh-office',
 ])
 
+/** Standalone command client; it never mounts the desktop's agent bundle. */
+export const CONTROL_BUNDLE = '@clawmaster/dsh-control'
+
+/**
+ * Initialize only the command client's profile through the existing DSH boot API.
+ * @param {string} root - Source or provisioned harness containing apps/cli.
+ * @param {string} home - Explicit DSH home shared with the selected desktop.
+ * @returns {Promise<void>} Resolves once the dedicated profile can load its bundle.
+ */
+export async function prepareControlProfile(root, home) {
+  if (!home) throw new Error('ClawMaster control requires an explicit DSH_HOME')
+  const anchor = join(root, 'apps/cli/package.json')
+  const require = createRequire(anchor)
+  const boot = await import(pathToFileURL(require.resolve('@deepseek-ai/dsh-app-boot')).href)
+  const dir = boot.resolveProfileDir('clawmaster-control', home)
+  const bundle = boot.resolveBundleDir('ClawMaster', CONTROL_BUNDLE, anchor, dir)
+  const manifest = JSON.parse(readFileSync(join(bundle, 'package.json'), 'utf8'))
+  if (!manifest.dsh?.bundle?.patch) throw new Error('ClawMaster control bundle has no patch')
+  readFileSync(join(bundle, manifest.dsh.bundle.patch))
+  readFileSync(join(bundle, 'dist/cli.js'))
+  readFileSync(join(bundle, 'dist/host.js'))
+  boot.initProfile(dir, [CONTROL_BUNDLE], 'startup')
+  const profile = boot.readProfileManifest('ClawMaster', dir)
+  if (profile.dsh?.profile?.bundles?.length !== 1 || profile.dsh.profile.bundles[0] !== CONTROL_BUNDLE) {
+    throw new Error('ClawMaster control profile must contain only the command client bundle')
+  }
+}
+
 /** Copy package-declared presets without replacing user files or following directory links. */
 function copyMissingPreset(source, destination) {
   mkdirSync(destination, { recursive: true })
@@ -95,6 +123,7 @@ export async function prepareDesktopProfile(root, home) {
     }
   }
   const template = boot.PROFILE_TEMPLATES.web
+  await prepareControlProfile(root, home)
   boot.initProfile(dir, template.bundles, template.patchReload)
   const before = boot.readProfileManifest('ClawMaster', dir)
   const after = withDesktopBundles(before)

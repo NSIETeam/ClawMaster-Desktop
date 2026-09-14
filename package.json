@@ -14,7 +14,8 @@
     "native/system",
     "native/system/packages/*",
     "apps/*",
-    "website"
+    "website",
+    "frontends/control"
   ],
   "scripts": {
     "build": "tsx scripts/build.ts",
@@ -182,7 +183,8 @@
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "test:notes-client": "vitest run --config frontends/notes/tests/vitest.client.config.ts",
-    "postinstall": "node scripts/install-lefthook.mjs"
+    "postinstall": "node scripts/install-lefthook.mjs",
+    "clawmaster": "node scripts/clawmaster.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:^",

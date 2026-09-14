@@ -10,6 +10,8 @@ packages:
   # Private package owning repository-level benchmark dependencies.
   - benchmarks
   - website
+  # The product CLI is resolved by the source dsh profile.
+  - frontends/control
   # Deploy root of the single-exe build: a pure dependency manifest whose
   # closure is what the exe bundles and what the Python runtime distributes.
   - python/sdk-runtime

@@ -630,7 +630,6 @@ function healProfileModuleFallback(profile: Profile, installationPackageNames: R
       throw error
     }
   })
-  for (const layer of profile.layers) bundleLinks.delete(layer.packageName)
   for (const packageName of ownedPackageNames(ownedModulesDir)) {
     if (!bundleLinks.has(packageName)) removeProfileSymlink(profileModulesDir, ownedModulesDir, packageName)
   }

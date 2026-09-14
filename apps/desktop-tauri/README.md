@@ -6,7 +6,7 @@ ClawMaster's Rust/WebView shell over the existing `dsh web` runtime. The install
 
 Desktop package version: **0.2.0**. `build:harness` selects the ClawMaster client profile, sets the browser title before plugins load, and projects the existing product icon into the built favicon and PWA manifest. It records the resulting client digest; packaging rejects a different title, profile, manifest name, icon, or digest. Upstream Web asset sources retain their default branding.
 
-The Tauri package is `@deepseek-ai/dsh-desktop-tauri`, independent of upstream Electron. The Host launch URL passes only in memory to a separate WebView, where upstream authentication issues the login cookie. Application commands belong to the local shell; loopback Host content receives only window dragging and double-click maximization permissions. Boot logs omit the launch token. The trimmed bundle includes `native/system` and permits unused development-tool patches only in that tree; patch application failures still stop installation.
+The Tauri package is `@deepseek-ai/dsh-desktop-tauri`, independent of upstream Electron. The native shell passes the Host launch URL in memory to a separate WebView, where upstream authentication issues the login cookie. The ClawMaster control bridge also publishes a private process login record for the same operating-system user's [CLI](#control-cli); this record grants full Host authentication, not read-only access. Application commands belong to the local shell; loopback Host content receives only window dragging and double-click maximization permissions. Boot logs omit the launch token. The trimmed bundle includes `native/system` and permits unused development-tool patches only in that tree; patch application failures still stop installation.
 
 ## Architecture
 
@@ -167,6 +167,20 @@ pnpm run dev
 ```
 
 **Installed app:** use the package for your system from GitHub Releases. First launch shows the splash while it scans the host, selects an existing DSH home, and installs missing tools or dependencies before opening the Web UI.
+
+<a id="control-cli"></a>
+## Control CLI
+
+The [ClawMaster Control CLI](../../frontends/control/README.md) connects to the running Host with the same operating-system account and `DSH_HOME`. The [desktop policy layer](defaults/cordis.patch.yml) includes its Host bridge; the separate `clawmaster-control` profile runs only the command client. An installed application must contain that bridge before it can answer these commands. Building the CLI does not update or restart the installed application.
+
+From a repository with development dependencies installed, build the component and inspect its help:
+
+```sh
+npm --prefix frontends/control run build
+pnpm clawmaster --help
+```
+
+Use `pnpm clawmaster status --json` to check the connection and `pnpm clawmaster sessions --running --json` to find active sessions. The supported installed-runtime spelling is `dsh --profile clawmaster-control COMMAND`. The component README owns message submission, cancellation, error recovery and the private connection record. Keep approvals in the Host's existing interaction flow; message acceptance does not mean task completion.
 
 ## Scripts
 
