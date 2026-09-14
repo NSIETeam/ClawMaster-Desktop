@@ -34,6 +34,7 @@ const trimmedPackages = [
   'frontends/guard',
   'frontends/notes',
   'frontends/office',
+  'frontends/rpa',
 ]
 
 /** Reviewed compatibility patches applied by pnpm before any desktop launch. */
@@ -233,6 +234,7 @@ export function withDesktopDependencies(manifest, workspaceOverrides = {}) {
       '@clawmaster/dsh-guard': 'workspace:*',
       '@clawmaster/dsh-notes': 'workspace:*',
       '@clawmaster/dsh-office': 'workspace:*',
+      '@clawmaster/dsh-rpa': 'workspace:*',
     },
   }
 }
@@ -276,6 +278,10 @@ function assertBuiltArtifacts() {
     cwd: repoRoot,
     stdio: 'inherit',
   })
+  execFileSync(process.execPath, [join(repoRoot, 'frontends/rpa/scripts/build.mjs'), '--check'], {
+    cwd: repoRoot,
+    stdio: 'inherit',
+  })
   const cliBin = join(repoRoot, 'apps', 'cli', 'lib', 'bin.js')
   const webIndex = join(repoRoot, 'apps', 'web', 'dist', 'index.html')
   const systemEntry = join(repoRoot, 'native', 'system', 'packages', 'entry', 'lib', 'index.js')
@@ -299,6 +305,9 @@ function assertBuiltArtifacts() {
   }
   if (!existsSync(join(repoRoot, 'frontends/guard/dist/index.js'))) {
     throw new Error('ClawMaster guard build missing. Run: node frontends/guard/scripts/build.mjs')
+  }
+  if (!existsSync(join(repoRoot, 'frontends/rpa/dist/index.js'))) {
+    throw new Error('ClawMaster RPA build missing. Run: node frontends/rpa/scripts/build.mjs')
   }
 }
 
@@ -345,7 +354,7 @@ copyTree(join(repoRoot, 'native', 'system'), join(outRoot, 'native', 'system'))
 copyTree(join(repoRoot, 'apps', 'cli'), join(outRoot, 'apps', 'cli'))
 copyTree(join(repoRoot, 'apps', 'web'), join(outRoot, 'apps', 'web'))
 copyTree(join(desktopRoot, 'defaults'), join(outRoot, 'apps', 'desktop-defaults'))
-for (const frontend of ['dsh', 'guard', 'notes', 'office']) {
+for (const frontend of ['dsh', 'guard', 'notes', 'office', 'rpa']) {
   for (const name of ['package.json', 'dist', 'cordis.patch.yml', 'README.md', 'README.zh.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']) {
     copyTree(join(repoRoot, 'frontends', frontend, name), join(outRoot, 'frontends', frontend, name))
   }

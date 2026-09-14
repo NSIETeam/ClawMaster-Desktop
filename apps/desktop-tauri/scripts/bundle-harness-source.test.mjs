@@ -135,6 +135,7 @@ test('desktop dependencies resolve the built frontend and exact reviewed plugin 
     '@clawmaster/dsh-guard': 'workspace:*',
     '@clawmaster/dsh-notes': 'workspace:*',
     '@clawmaster/dsh-office': 'workspace:*',
+    '@clawmaster/dsh-rpa': 'workspace:*',
   })
   assert.deepEqual(source.dependencies, { kept: 'workspace:^' })
 })

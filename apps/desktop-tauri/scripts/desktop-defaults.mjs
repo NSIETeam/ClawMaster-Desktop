@@ -21,6 +21,7 @@ export const DESKTOP_BUNDLES = Object.freeze([
   '@clawmaster/dsh-guard',
   '@clawmaster/dsh-notes',
   '@clawmaster/dsh-office',
+  '@clawmaster/dsh-rpa',
 ])
 
 /** Copy package-declared presets without replacing user files or following directory links. */

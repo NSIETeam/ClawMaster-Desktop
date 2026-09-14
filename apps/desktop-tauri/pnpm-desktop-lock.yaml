@@ -293,6 +293,9 @@ importers:
       '@clawmaster/dsh-office':
         specifier: workspace:*
         version: link:../../frontends/office
+      '@clawmaster/dsh-rpa':
+        specifier: workspace:*
+        version: link:../../frontends/rpa
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../vendor/cordis

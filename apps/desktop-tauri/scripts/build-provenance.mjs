@@ -20,7 +20,7 @@ generatedIcons.push('apps/desktop-tauri/app-icon.png')
 const sourceExclusions = new Set(generatedIcons)
 const artifactPatterns = {
   harness: ['apps/cli/lib/**/*', 'apps/web/dist/**/*', 'packages/*/*/lib/**/*', 'vendor/*/lib/**/*', 'native/system/packages/*/lib/**/*'],
-  product: ['frontends/dsh/dist/**/*', 'frontends/guard/dist/**/*', 'frontends/notes/dist/**/*', 'frontends/office/dist/**/*', 'frontends/office/runtime/.clawmaster-office-manifest.json', 'native/system/packages/*/bin/**/*', 'apps/desktop-tauri/dist/**/*', ...generatedIcons],
+  product: ['frontends/dsh/dist/**/*', 'frontends/guard/dist/**/*', 'frontends/notes/dist/**/*', 'frontends/office/dist/**/*', 'frontends/rpa/dist/**/*', 'frontends/office/runtime/.clawmaster-office-manifest.json', 'native/system/packages/*/bin/**/*', 'apps/desktop-tauri/dist/**/*', ...generatedIcons],
 }
 
 /** @param {NodeJS.ProcessEnv} environment @returns {'release' | 'development'} Explicit release mode or labelled development output. */

@@ -1,0 +1,24 @@
+[package]
+name = "clawmaster-rpa-native"
+version = "0.1.0"
+edition = "2021"
+description = "ClawMaster RPA native control plane: OS accessibility, input and screenshot control"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+aes-gcm = "0.10"
+base64 = "0.22"
+lopdf = { version = "0.34", default-features = false, features = ["nom_parser"] }
+reqwest = { version = "0.13", features = ["json", "stream", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+sled = "0.34"
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "sync", "time"] }
+url = "2"
+xa11y = "=0.13.0"
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+getrandom = "0.2"
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native", "windows-native"] }
+process-wrap = { version = "9.1.0", default-features = false, features = ["std", "job-object", "process-group"] }

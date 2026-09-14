@@ -17,7 +17,7 @@ const icons = spawnSync(process.execPath, [join(root, 'scripts', 'generate-icons
   stdio: 'inherit', cwd: root,
 })
 if (icons.status !== 0) process.exit(icons.status ?? 1)
-for (const name of ['dsh', 'guard', 'notes', 'office']) {
+for (const name of ['dsh', 'guard', 'notes', 'office', 'rpa']) {
   const frontend = join(root, '..', '..', 'frontends', name)
   const frontendBuild = spawnSync(process.execPath, [join(frontend, 'scripts', 'build.mjs')], {
     stdio: 'inherit', cwd: frontend,
