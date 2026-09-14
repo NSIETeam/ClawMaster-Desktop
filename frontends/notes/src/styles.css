@@ -363,13 +363,14 @@
 }
 
 .cm-notes-head {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   flex: none;
   align-items: center;
   gap: var(--cm-row-gap);
   padding: var(--cm-row-padding) 10px;
-  border-bottom: 1px solid var(--cm-line);
 }
 
 .cm-notes-head h2 {
@@ -382,6 +383,98 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cm-notes-title {
+  box-sizing: border-box;
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  height: 28px;
+  padding: 3px 7px;
+  border: 1px solid transparent;
+  border-radius: var(--cm-radius-sm);
+  background: transparent;
+  color: var(--cm-ink-2);
+  font: var(--cm-font);
+  text-overflow: ellipsis;
+}
+
+.cm-notes-title:hover,
+.cm-notes-title:focus {
+  border-color: var(--cm-line);
+  background: var(--cm-surface);
+}
+
+.cm-notes-more {
+  position: relative;
+  flex: none;
+  color: var(--cm-ink-2);
+}
+
+.cm-notes-more > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--cm-radius-sm);
+  list-style: none;
+  cursor: pointer;
+}
+
+.cm-notes-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cm-notes-more > summary:hover,
+.cm-notes-more[open] > summary {
+  background: var(--cm-hover);
+  color: var(--cm-ink);
+}
+
+.cm-notes-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  inset-inline-end: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  width: 232px;
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+  border: 1px solid var(--cm-line-2);
+  border-radius: var(--cm-radius);
+  background: var(--dsw-alias-bg-base, #fff);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+}
+
+.cm-notes-more-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--cm-radius-sm);
+  background: transparent;
+  color: var(--cm-ink);
+  font: var(--cm-font);
+  text-align: start;
+  cursor: pointer;
+}
+
+.cm-notes-more-menu button:hover:not(:disabled) {
+  background: var(--cm-hover);
+}
+
+.cm-notes-more-menu button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.cm-notes-more-menu button[data-danger] {
+  color: var(--cm-danger);
 }
 
 .cm-notes-actions {
@@ -421,7 +514,7 @@
   flex: none;
 }
 
-/* Source and rendered views share one reading measure. */
+/* Markdown source fills the same writing area as the document. */
 .cm-notes-editor > textarea {
   box-sizing: border-box;
   flex: 1;
@@ -437,97 +530,6 @@
   line-height: 1.8;
   outline: none;
   tab-size: 2;
-}
-
-.cm-notes-preview {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 8px 20px 24px;
-  font-size: 15px;
-  line-height: 1.8;
-}
-
-.cm-notes-preview > :first-child {
-  margin-top: 10px;
-}
-
-.cm-notes-preview h1,
-.cm-notes-preview h2,
-.cm-notes-preview h3,
-.cm-notes-preview h4,
-.cm-notes-preview h5,
-.cm-notes-preview h6 {
-  margin: 20px 0 8px;
-  line-height: 1.3;
-  font-weight: 600;
-}
-
-.cm-notes-preview h1 { font-size: 20px; }
-.cm-notes-preview h2 { font-size: 17px; }
-.cm-notes-preview h3 { font-size: 15px; }
-.cm-notes-preview h4,
-.cm-notes-preview h5,
-.cm-notes-preview h6 { font-size: 13.5px; }
-
-.cm-notes-preview p {
-  margin: 8px 0;
-}
-
-.cm-notes-preview ul,
-.cm-notes-preview ol {
-  margin: 8px 0;
-  padding-left: 22px;
-}
-
-.cm-notes-preview li {
-  margin: 2px 0;
-}
-
-.cm-notes-preview code {
-  padding: 1px 4px;
-  border-radius: var(--cm-radius-sm);
-  background: var(--cm-surface);
-  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-  font-size: .92em;
-}
-
-.cm-notes-preview pre {
-  margin: 10px 0;
-  padding: 10px 12px;
-  border: 1px solid var(--cm-line);
-  border-radius: var(--cm-radius);
-  background: var(--cm-surface);
-  overflow: auto;
-}
-
-.cm-notes-preview pre code {
-  padding: 0;
-  background: none;
-}
-
-.cm-notes-preview blockquote {
-  margin: 10px 0;
-  padding: 2px 0 2px 12px;
-  border-left: 3px solid var(--cm-line-2);
-  color: var(--cm-ink-2);
-}
-
-.cm-notes-preview hr {
-  margin: 16px 0;
-  border: 0;
-  border-top: 1px solid var(--cm-line);
-}
-
-.cm-notes-preview table {
-  border-collapse: collapse;
-  margin: 10px 0;
-}
-
-.cm-notes-preview th,
-.cm-notes-preview td {
-  padding: 4px 10px;
-  border: 1px solid var(--cm-line);
 }
 
 /* A wiki link reads as an in-panel link, not as underlined prose. */
@@ -811,35 +813,6 @@
   }
 }
 
-.cm-notes-modes {
-  display: flex;
-  flex: none;
-  gap: 4px;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--cm-line);
-}
-
-.cm-notes-modes button {
-  min-height: 28px;
-  padding: 3px 12px;
-  border: 0;
-  border-radius: var(--cm-radius-sm);
-  background: transparent;
-  color: var(--cm-ink-2);
-  font: inherit;
-  cursor: pointer;
-}
-
-.cm-notes-modes button[aria-pressed='true'] {
-  background: var(--cm-selected);
-  color: var(--cm-accent);
-}
-
-.cm-notes-modes button:disabled {
-  opacity: .45;
-  cursor: default;
-}
-
 .cm-notes-format-notice {
   flex: none;
   margin: 0;
@@ -908,6 +881,10 @@
   flex-wrap: wrap;
   border-radius: 0;
   border-bottom: 1px solid var(--cm-line);
+}
+
+.cm-notes-rich[data-toolbar-visible="false"] .cm-notes-rich-toolbar {
+  display: none;
 }
 
 .cm-notes .mdxeditor-root-contenteditable {

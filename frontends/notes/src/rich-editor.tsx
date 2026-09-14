@@ -19,6 +19,8 @@ export interface RichNoteEditorProps {
   markdown: string;
   readOnly: boolean;
   hidden: boolean;
+  /** Show the optional formatting controls without replacing editor history. */
+  showToolbar?: boolean;
   copy: NotesCopy;
   onChange: (text: string) => void;
   onUnavailable: () => void;
@@ -156,7 +158,7 @@ function MountedRichEditor(props: RichNoteEditorProps): ReactNode {
     latest.current.onChange(source);
   }, []);
 
-  return <><div className="cm-notes-rich" hidden={props.hidden}>
+  return <><div className="cm-notes-rich" hidden={props.hidden} data-toolbar-visible={props.showToolbar === true}>
     <EditorFailure onUnavailable={reportUnavailable} source={props.markdown}>
       <MDXEditor ref={editor} markdown={input.body} trim={false}
         className="mdxeditor-full-height" contentEditableClassName="cm-notes-document-content"
@@ -173,7 +175,7 @@ function MountedRichEditor(props: RichNoteEditorProps): ReactNode {
 /**
  * Edit a Markdown note while retaining frontmatter and untouched source bytes.
  * @param props The current draft, locale and edit callbacks; documentKey resets history.
- * @returns A mounted document editor, hidden when the source or preview is active.
+ * @returns A mounted document editor, hidden when the source or another tab is active.
  */
 export function RichNoteEditor(props: RichNoteEditorProps): ReactNode {
   return <MountedRichEditor key={props.documentKey} {...props} />;

@@ -14,6 +14,15 @@ interface GlyphProps {
   className?: string | undefined;
 }
 
+/** Secondary note actions. */
+export function MoreIcon({ size, className }: GlyphProps): ReactNode {
+  return <Glyph size={size} className={className}>
+    <circle cx="3.5" cy="8" r=".7" fill="currentColor" />
+    <circle cx="8" cy="8" r=".7" fill="currentColor" />
+    <circle cx="12.5" cy="8" r=".7" fill="currentColor" />
+  </Glyph>;
+}
+
 function Glyph({ size = 14, className, children }: GlyphProps & { children: ReactNode }): ReactNode {
   return <svg className={className} width={size} height={size} viewBox="0 0 16 16" fill="none"
     stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -10,6 +10,15 @@ export interface NotesCopy {
   vault: string;
   noteList: string;
   noteDetails: string;
+  moreActions: string;
+  fileName: string;
+  invalidFileName: string;
+  viewMarkdown: string;
+  returnDocument: string;
+  showFormatting: string;
+  hideFormatting: string;
+  retrySave: string;
+  linkedNotes: string;
   editorMode: string;
   documentMode: string;
   markdownMode: string;
@@ -70,6 +79,10 @@ const copy: Record<NotesLocale, NotesCopy> = {
     richUnavailable: '这篇笔记包含暂不支持的格式，原文已保留，请使用 Markdown 源码编辑。',
     mdxTranslations: notesRichCopy('zh-CN'),
     noteList: '笔记目录', noteDetails: '笔记信息',
+    moreActions: '更多笔记操作', fileName: '文件名', viewMarkdown: 'Markdown 源码', returnDocument: '返回文档',
+    invalidFileName: '请输入有效文件名，不能包含 / 或 \\。',
+    showFormatting: '显示格式工具', hideFormatting: '收起格式工具', retrySave: '重试保存',
+    linkedNotes: '链接笔记',
     vault: '笔记库', newNote: '新建笔记', noteName: '笔记名称', create: '创建', cancel: '取消',
     search: '搜索笔记', searchPlaceholder: '输入关键词…', results: '搜索结果', noResults: '没有匹配的笔记',
     line: '第', rename: '重命名', renameLabel: '新名称', todayNote: '今日笔记',
@@ -92,6 +105,10 @@ const copy: Record<NotesLocale, NotesCopy> = {
     richUnavailable: 'This note contains unsupported formatting. The original text is preserved; use Markdown source to edit it.',
     mdxTranslations: notesRichCopy('en-US'),
     noteList: 'Note list', noteDetails: 'Note details',
+    moreActions: 'More note actions', fileName: 'File name', viewMarkdown: 'Markdown source', returnDocument: 'Back to document',
+    invalidFileName: 'Enter a valid file name without / or \\.',
+    showFormatting: 'Show formatting tools', hideFormatting: 'Hide formatting tools', retrySave: 'Retry saving',
+    linkedNotes: 'Linked notes',
     vault: 'Vault', newNote: 'New note', noteName: 'Note name', create: 'Create', cancel: 'Cancel',
     search: 'Search notes', searchPlaceholder: 'Type a keyword…', results: 'Results', noResults: 'No matching notes',
     line: 'line', rename: 'Rename', renameLabel: 'New name', todayNote: "Today's note",

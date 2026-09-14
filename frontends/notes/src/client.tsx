@@ -2,16 +2,14 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { RichNoteEditor } from './rich-editor.tsx';
+import { NotesAutosave } from './autosave.ts';
 import { NotesApi, NotesApiError } from './notes-api.ts';
-import { inlineTokens, parseMarkdown, type Block } from './markdown.ts';
 import type { NoteEntry, NoteMatch, NoteRead, Proposal, UnifiedDiff } from './protocol.ts';
-import { extractLinks, noteTitle, parseFrontmatter } from './note-format.ts';
 import { notesCopy, type NotesLocale } from './locales.ts';
 import { ancestorsOf, buildTree, flattenTree } from './tree.ts';
 import {
   BacklinkIcon, CalendarIcon, CanvasIcon, ChevronIcon, FolderIcon, FolderOpenIcon,
-  InfoIcon, NoteIcon, PlusIcon, ProposalIcon, RenameIcon, SaveIcon, SearchIcon,
-  TagIcon, TrashIcon,
+  InfoIcon, MoreIcon, NoteIcon, PlusIcon, ProposalIcon, SearchIcon, TagIcon,
 } from './icons.tsx';
 import editorStyles from '@mdxeditor/editor/style.css';
 import styles from './styles.css';
@@ -36,12 +34,7 @@ export interface NotesClientServices {
   };
 }
 
-type NoteDraft = { note: NoteRead; text: string };
-type Drafts = Map<string, NoteDraft>;
-
 type Status = { state: 'loading' | 'idle' | 'dirty' | 'saving' | 'saved' | 'conflict' | 'error'; message?: string };
-
-const HEADINGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
 
 /**
  * Sidebar glyph for the notes tab.
@@ -59,48 +52,23 @@ function NotesIcon({ size = 18 }: { size?: number }): ReactNode {
 /** How often a visible notes panel asks whether the vault changed underneath it. */
 const REVISION_POLL_MS = 4000;
 
-/** Render one inline run: wiki links become in-panel navigation, never raw markup. */
-function InlineView({ text, onWiki }: { text: string; onWiki: (target: string) => void }): ReactNode {
-  return <>{inlineTokens(text).map((token, index) => {
-    if (token.kind === 'wiki') {
-      return <button key={index} type="button" className="cm-notes-wiki" onClick={() => onWiki(token.target ?? token.text)}>{token.text}</button>;
-    }
-    if (token.kind === 'code') return <code key={index}>{token.text}</code>;
-    if (token.kind === 'strong') return <strong key={index}>{token.text}</strong>;
-    return <span key={index}>{token.text}</span>;
-  })}</>;
-}
+function fileName(id: string): string { return (id.split('/').at(-1) ?? id).replace(/\.md$/, ''); }
 
-/** Render one parsed block. */
-function BlockView({ block, onWiki }: { block: Block; onWiki: (target: string) => void }): ReactNode {
-  switch (block.kind) {
-    case 'heading': {
-      const Tag = HEADINGS[Math.min(Math.max(block.level ?? 1, 1), 6) - 1] ?? 'p';
-      return <Tag><InlineView text={block.text} onWiki={onWiki} /></Tag>;
-    }
-    case 'list': {
-      const items = (block.items ?? []).map((item, index) => <li key={index}><InlineView text={item} onWiki={onWiki} /></li>);
-      return block.ordered === true ? <ol>{items}</ol> : <ul>{items}</ul>;
-    }
-    case 'quote': return <blockquote><InlineView text={block.text} onWiki={onWiki} /></blockquote>;
-    case 'code': return <pre data-language={block.language ?? ''}><code>{block.text}</code></pre>;
-    case 'rule': return <hr />;
-    case 'paragraph': return <p><InlineView text={block.text} onWiki={onWiki} /></p>;
-  }
-}
-
-/** The sidebar notes page: vault tree, editor, preview, backlinks, tags and search. */
-function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts: Drafts; visible: boolean }): ReactNode {
+/** The sidebar notes page: documents, vault tree, backlinks, tags and search. */
+function NotesPanel({ ctx, autosave, visible }: { ctx: NotesClientServices; autosave: NotesAutosave; visible: boolean }): ReactNode {
   const locale: NotesLocale = useSyncExternalStore(
     listener => ctx.locale.subscribe(listener),
     () => ctx.locale.getSnapshot().active,
   ).startsWith('zh') ? 'zh-CN' : 'en-US';
   const copy = notesCopy(locale);
   const api = useMemo(() => new NotesApi((input, init) => fetch(input as string, init)), []);
+  const drafts = autosave.drafts;
+  const saveVersion = useSyncExternalStore(autosave.subscribe, autosave.getSnapshot);
   const [entries, setEntries] = useState<NoteEntry[]>();
   const [open, setOpen] = useState<NoteRead | undefined>(() => drafts.values().next().value?.note);
   const [draft, setDraft] = useState(() => drafts.values().next().value?.text ?? '');
-  const [mode, setMode] = useState<'document' | 'source' | 'preview'>('document');
+  const [mode, setMode] = useState<'document' | 'source'>('document');
+  const [formattingOpen, setFormattingOpen] = useState(false);
   const [richUnavailable, setRichUnavailable] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -120,15 +88,25 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
   const [newName, setNewName] = useState('');
   const [confirmation, setConfirmation] = useState<'delete' | 'reload'>();
   const [wiki, setWiki] = useState<{ target: string; candidates: NoteEntry[] }>();
-  const [renaming, setRenaming] = useState<string>();
-  const [renameDraft, setRenameDraft] = useState('');
+  const [renameDraft, setRenameDraft] = useState(() => fileName(drafts.values().next().value?.note.id ?? ''));
+  const [mutating, setMutating] = useState(false);
+  const more = useRef<HTMLDetailsElement>(null);
+  const composingName = useRef(false);
+  const skipNameBlur = useRef(false);
   const busy = useRef(false);
   const generation = useRef(0);
   const vaultVersion = useRef<string>();
   // Read through a ref so the poll below never restarts on a keystroke.
   const latest = useRef<{ open: NoteRead | undefined; draft: string }>({ open: undefined, draft: '' });
   latest.current = { open, draft };
-  useEffect(() => () => { generation.current += 1; }, []);
+  useEffect(() => () => { generation.current += 1; void autosave.flushAll(); }, [autosave]);
+  useEffect(() => { if (!visible) void autosave.flushAll(); }, [autosave, visible]);
+  useEffect(() => {
+    const current = latest.current.open;
+    if (!current) return;
+    const head = autosave.head(current.id);
+    if (head && head.revision !== current.revision) setOpen(head);
+  }, [autosave, saveVersion]);
 
   const fail = useCallback((error: unknown) => {
     if (error instanceof NotesApiError) {
@@ -159,9 +137,9 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
     let cancelled = false;
     const poll = async () => {
       try {
-        if (busy.current) return;
+        if (busy.current || (latest.current.open && autosave.saving(latest.current.open.id))) return;
         const current = await api.revision();
-        if (cancelled || busy.current) return;
+        if (cancelled || busy.current || (latest.current.open && autosave.saving(latest.current.open.id))) return;
         const previous = vaultVersion.current;
         vaultVersion.current = current;
         if (previous === undefined || previous === current) return;
@@ -171,14 +149,17 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
         if (currentNote === undefined) return;
         const readGeneration = generation.current;
         const fresh = await api.read(currentNote.id);
-        if (cancelled || busy.current || readGeneration !== generation.current) return;
+        if (cancelled || busy.current || autosave.saving(currentNote.id) || readGeneration !== generation.current) return;
+        const acknowledged = autosave.head(currentNote.id);
+        if (acknowledged && acknowledged.revision !== currentNote.revision) return;
         const editor = latest.current;
         if (editor.open?.id !== currentNote.id || editor.open.revision !== currentNote.revision) return;
         if (fresh.revision === currentNote.revision) return;
-        if (editor.draft !== editor.open.text) {
+        if (drafts.has(currentNote.id) || editor.draft !== editor.open.text) {
           setStatus({ state: 'conflict', message: copy.external });
           return;
         }
+        autosave.remember(fresh);
         setOpen(fresh);
         setDraft(fresh.text);
       } catch { /* a failed poll is not something the user needs to act on */ }
@@ -186,7 +167,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
     void poll();
     const timer = setInterval(() => { void poll(); }, REVISION_POLL_MS);
     return () => { cancelled = true; clearInterval(timer); };
-  }, [api, copy, refresh, visible]);
+  }, [api, autosave, copy, drafts, refresh, visible]);
 
   const openNote = useCallback(async (id: string, reload = false) => {
     if (busy.current) return;
@@ -194,11 +175,18 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
     setConfirmation(undefined);
     setStatus({ state: 'loading' });
     try {
+      const previous = latest.current.open;
+      if (previous && !reload) await autosave.flush(previous.id);
+      if (requestGeneration !== generation.current) return;
+      if (reload) await autosave.settle(id);
       const retained = reload ? undefined : drafts.get(id);
       const note = retained?.note ?? await api.read(id);
       if (requestGeneration !== generation.current) return;
-      if (reload) drafts.delete(id);
+      if (reload) await autosave.discard(id);
+      if (requestGeneration !== generation.current) return;
+      autosave.remember(note);
       setOpen(note);
+      setRenameDraft(fileName(note.id));
       setLibraryOpen(false);
       setDraft(retained?.text ?? note.text);
       setRichUnavailable(false);
@@ -215,35 +203,36 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
       const linked = await api.backlinks(id);
       if (requestGeneration === generation.current) setBacklinks(linked.notes);
     } catch (error) { if (requestGeneration === generation.current) fail(error); }
-  }, [api, drafts, fail]);
+  }, [api, autosave, drafts, fail]);
 
   const save = useCallback(async () => {
-    if (!open || busy.current) return;
-    busy.current = true;
-    const requestGeneration = ++generation.current;
-    setStatus({ state: 'saving' });
-    try {
-      const receipt = await api.command({ action: 'save', id: open.id, text: draft, expectedRevision: open.revision });
-      if (receipt.revision === null) throw new NotesApiError('storage_unavailable', copy.invalidRevision);
-      const head = parseFrontmatter(draft);
-      const saved = { ...open, text: draft, revision: receipt.revision,
-        title: noteTitle(open.id, head.data, head.body), ...extractLinks(draft) };
-      if (drafts.get(open.id)?.text === draft) drafts.delete(open.id);
-      if (requestGeneration !== generation.current) return;
-      setOpen(saved);
-      setStatus({ state: 'saved' });
-      await refresh();
-    } catch (error) { if (requestGeneration === generation.current) fail(error); }
-    finally { busy.current = false; }
-  }, [api, copy, draft, drafts, fail, open, refresh]);
+    const current = latest.current.open;
+    if (!current || current.id.endsWith('.canvas') || busy.current) return;
+    if (await autosave.flush(current.id, true)) await refresh();
+  }, [autosave, refresh]);
+
+  const editDraft = useCallback((text: string) => {
+    const current = latest.current.open;
+    if (!current || busy.current) return;
+    setDraft(text);
+    latest.current = { open: current, draft: text };
+    autosave.edit(current, text);
+  }, [autosave]);
+
+  const flushCurrent = useCallback(async (): Promise<boolean> => {
+    const current = latest.current.open;
+    return current === undefined || await autosave.flush(current.id);
+  }, [autosave]);
 
   const createNote = useCallback(async () => {
     const name = newName.trim();
     if (name === '' || busy.current) return;
     busy.current = true;
+    setMutating(true);
     const id = name.endsWith('.md') ? name : `${name}.md`;
     setStatus({ state: 'saving' });
     try {
+      if (!await flushCurrent()) return;
       await api.command({ action: 'create', id, text: `# ${name.replace(/\.md$/, '')}\n` });
       setCreating(false);
       setNewName('');
@@ -251,53 +240,60 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
       busy.current = false;
       await openNote(id);
     } catch (error) { fail(error); }
-    finally { busy.current = false; }
-  }, [api, fail, newName, openNote, refresh]);
+    finally { busy.current = false; setMutating(false); }
+  }, [api, fail, flushCurrent, newName, openNote, refresh]);
 
   const removeNote = useCallback(async (id: string) => {
     if (busy.current) return;
     busy.current = true;
+    setMutating(true);
     const requestGeneration = ++generation.current;
     setConfirmation(undefined);
     setStatus({ state: 'saving' });
     try {
+      if (!await autosave.flush(id)) return;
       await api.command({ action: 'delete', id });
-      drafts.delete(id);
+      await autosave.discard(id);
       if (requestGeneration !== generation.current) return;
       setOpen(undefined);
       setDraft('');
       setStatus({ state: 'idle' });
       await refresh();
     } catch (error) { if (requestGeneration === generation.current) fail(error); }
-    finally { busy.current = false; }
-  }, [api, drafts, fail, refresh]);
+    finally { busy.current = false; setMutating(false); }
+  }, [api, autosave, fail, refresh]);
 
   /** Apply a reviewed proposal; the vault refuses when the note moved since it was drafted. */
   const applyProposal = useCallback(async (proposalId: string) => {
     if (busy.current) return;
     busy.current = true;
+    setMutating(true);
     setStatus({ state: 'saving' });
     try {
+      if (!await flushCurrent()) return;
+      const target = proposals.find(entry => entry.proposal.proposalId === proposalId)?.proposal.id;
+      if (target && !await autosave.flush(target)) return;
       const receipt = await api.command({ action: 'apply-proposal', proposalId });
       await refresh();
       busy.current = false;
       await openNote(receipt.id);
       if (drafts.has(receipt.id)) setStatus({ state: 'conflict', message: copy.external });
     } catch (error) { fail(error); }
-    finally { busy.current = false; }
-  }, [api, copy, drafts, fail, openNote, refresh]);
+    finally { busy.current = false; setMutating(false); }
+  }, [api, autosave, copy, drafts, fail, flushCurrent, openNote, proposals, refresh]);
 
   /** Drop a proposal without touching the note. */
   const discardProposal = useCallback(async (proposalId: string) => {
     if (busy.current) return;
     busy.current = true;
+    setMutating(true);
     setStatus({ state: 'saving' });
     try {
       await api.command({ action: 'discard-proposal', proposalId });
       setStatus({ state: 'idle' });
       await refresh();
     } catch (error) { fail(error); }
-    finally { busy.current = false; }
+    finally { busy.current = false; setMutating(false); }
   }, [api, fail, refresh]);
 
   const runSearch = useCallback(async () => {
@@ -323,56 +319,97 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
 
   /** Create the note a wiki link points at, then open it. */
   const createFromWiki = useCallback(async (target: string) => {
+    if (busy.current) return;
+    busy.current = true;
+    setMutating(true);
     const id = target.endsWith('.md') ? target : `${target}.md`;
     try {
+      if (!await flushCurrent()) return;
       await api.command({ action: 'create', id, text: `# ${target.replace(/\.md$/, '')}\n` });
       setWiki(undefined);
       await refresh();
+      busy.current = false;
       await openNote(id);
     } catch (error) { fail(error); }
-  }, [api, fail, openNote, refresh]);
+    finally { busy.current = false; setMutating(false); }
+  }, [api, fail, flushCurrent, openNote, refresh]);
 
   /** Rename the open note; the vault refuses to clobber an existing target. */
   const renameNote = useCallback(async (to: string) => {
-    if (!open || busy.current) return;
-    const trimmed = to.trim();
-    const target = trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`;
-    if (trimmed === '' || target === open.id) { setRenaming(undefined); return; }
+    const current = latest.current.open;
+    if (!current || current.id.endsWith('.canvas') || busy.current) return;
+    const trimmed = to.trim().replace(/\.md$/, '');
+    if (trimmed === '' || trimmed === '.' || trimmed === '..' || /[\\/]/.test(trimmed)) {
+      fail(new NotesApiError('invalid_request', copy.invalidFileName));
+      return;
+    }
+    const directory = current.id.slice(0, current.id.lastIndexOf('/') + 1);
+    const target = `${directory}${trimmed}.md`;
+    if (target === current.id) { setRenameDraft(fileName(current.id)); return; }
     busy.current = true;
+    setMutating(true);
     setStatus({ state: 'saving' });
     try {
-      await api.command({ action: 'rename', id: open.id, to: target });
-      const retained = drafts.get(open.id);
-      if (retained) {
-        drafts.set(target, { note: { ...retained.note, id: target }, text: retained.text });
-        drafts.delete(open.id);
+      if (!await autosave.flush(current.id)) return;
+      const receipt = await api.command({ action: 'rename', id: current.id, to: target });
+      if (receipt.revision === null) throw new NotesApiError('storage_unavailable', copy.invalidRevision);
+      const known = autosave.head(current.id) ?? current;
+      const renamed = { ...known, id: target };
+      await autosave.discard(current.id);
+      autosave.remember(renamed);
+      generation.current += 1;
+      setOpen(renamed);
+      setDraft(renamed.text);
+      setRenameDraft(fileName(target));
+      if (receipt.revision !== known.revision) {
+        let fresh: NoteRead;
+        try { fresh = await api.read(target); }
+        catch {
+          setStatus({ state: 'conflict', message: `${copy.external} · ${copy.error}` });
+          await refresh();
+          return;
+        }
+        autosave.remember(fresh);
+        setOpen(fresh);
+        setDraft(fresh.text);
       }
-      setRenaming(undefined);
+      setStatus({ state: 'idle' });
       await refresh();
-      busy.current = false;
-      await openNote(target);
     } catch (error) { fail(error); }
-    finally { busy.current = false; }
-  }, [api, drafts, fail, open, openNote, refresh]);
+    finally { busy.current = false; setMutating(false); }
+  }, [api, autosave, copy, fail, refresh]);
 
   /** Open today's daily note, creating it when it does not exist yet. */
   const openToday = useCallback(async () => {
     if (busy.current) return;
     busy.current = true;
+    setMutating(true);
     setStatus({ state: 'saving' });
     try {
+      if (!await flushCurrent()) return;
       const receipt = await api.command({ action: 'daily', text: '' });
       await refresh();
       busy.current = false;
       await openNote(receipt.id);
     } catch (error) { fail(error); }
-    finally { busy.current = false; }
-  }, [api, fail, openNote, refresh]);
+    finally { busy.current = false; setMutating(false); }
+  }, [api, fail, flushCurrent, openNote, refresh]);
 
   const dirty = open !== undefined && draft !== open.text;
   const isCanvas = open !== undefined && open.id.endsWith('.canvas');
   const activeMode = richUnavailable && mode === 'document' ? 'source' : mode;
-  const blocks = useMemo(() => parseMarkdown(draft), [draft]);
+  const saveFailure = open ? drafts.get(open.id)?.failure : undefined;
+  const saveError = saveFailure?.error;
+  const displayStatus: Status = saveFailure
+    ? saveError instanceof NotesApiError && saveError.code === 'conflict'
+      ? { state: 'conflict', message: copy.conflict }
+      : { state: 'error', message: saveError instanceof NotesApiError && saveError.code === 'invalid_save_revision'
+        ? copy.invalidRevision : `${copy.error}: ${saveError instanceof Error ? saveError.message : String(saveError)}` }
+    : status.state === 'loading' || mutating || status.state === 'error' || status.state === 'conflict' ? status
+    : open && autosave.saving(open.id) ? { state: 'saving' }
+    : dirty ? { state: 'dirty' }
+    : open && autosave.saved(open.id) ? { state: 'saved' }
+    : { state: 'idle' };
   const tree = useMemo(() => buildTree(entries ?? []), [entries]);
   const rows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
 
@@ -385,7 +422,13 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
     });
   }, []);
 
-  return <section className="cm-notes" aria-label={copy.tab}>
+  return <section className="cm-notes" aria-label={copy.tab} onKeyDownCapture={event => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+      event.preventDefault();
+      event.stopPropagation();
+      void save();
+    }
+  }}>
     <div className="cm-notes-bar">
       <button type="button" className="cm-notes-tool cm-notes-library-toggle" aria-label={copy.noteList}
         title={copy.noteList} aria-expanded={!open || libraryOpen} aria-controls={libraryId}
@@ -424,7 +467,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
         ? matches.length === 0
           ? <p className="cm-notes-empty">{copy.noResults}</p>
           : matches.map(match => <div key={`${match.id}:${match.lineNumber}`} className="cm-notes-hit">
-            <button type="button" className="cm-notes-item" disabled={status.state === 'saving'}
+            <button type="button" className="cm-notes-item" disabled={mutating}
               onClick={() => void openNote(match.id)}>
               <NoteIcon size={14} className="cm-notes-glyph" />
               <span className="cm-notes-label">{match.title}</span>
@@ -441,7 +484,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
           : rows.map(row => row.kind === 'folder'
             ? <button key={`folder:${row.id}`} type="button" className="cm-notes-item cm-notes-folder"
               style={{ paddingLeft: row.depth * 22 + 6 }}
-              aria-expanded={!collapsed.has(row.id)} disabled={status.state === 'saving'}
+              aria-expanded={!collapsed.has(row.id)} disabled={mutating}
               onClick={() => toggleFolder(row.id)}>
               <ChevronIcon size={12} className={collapsed.has(row.id) ? 'cm-notes-chevron' : 'cm-notes-chevron cm-notes-chevron-open'} />
               {collapsed.has(row.id)
@@ -451,7 +494,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
             </button>
             : <button key={row.id} type="button" className="cm-notes-item" data-active={open?.id === row.id}
               style={{ paddingLeft: row.depth * 22 + 6 + 18 }}
-              disabled={status.state === 'saving'} onClick={() => void openNote(row.id)}>
+              disabled={mutating} onClick={() => void openNote(row.id)}>
               {row.id.endsWith('.canvas')
                 ? <CanvasIcon size={14} className="cm-notes-glyph" />
                 : <NoteIcon size={14} className="cm-notes-glyph" />}
@@ -463,25 +506,50 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
     </div>
     {open && <div className="cm-notes-editor">
       <div className="cm-notes-head">
-        <h2>{open.title}</h2>
-        <div className="cm-notes-actions">
-          {!isCanvas && <button type="button" className="cm-notes-action" disabled={status.state === 'saving'}
-            onClick={() => { setRenaming(open.id); setRenameDraft(open.id.replace(/\.md$/, '')); }}>
-            <RenameIcon size={14} />{copy.rename}
-          </button>}
-          <button type="button" className="cm-notes-action" disabled={isCanvas || !dirty || status.state === 'saving'} onClick={() => void save()}>
-            <SaveIcon size={14} />{copy.save}
-          </button>
-          <button type="button" className="cm-notes-action" disabled={status.state === 'saving'} onClick={() => setConfirmation('delete')}>
-            <TrashIcon size={14} />{copy.delete}
-          </button>
-        </div>
+        <input className="cm-notes-title" aria-label={copy.fileName} value={renameDraft}
+          readOnly={isCanvas || mutating || status.state === 'loading'}
+          onChange={event => setRenameDraft(event.target.value)}
+          onFocus={() => { skipNameBlur.current = false; }}
+          onCompositionStart={() => { composingName.current = true; }}
+          onCompositionEnd={() => { composingName.current = false; }}
+          onKeyDown={event => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              skipNameBlur.current = true;
+              setRenameDraft(fileName(open.id));
+              event.currentTarget.blur();
+            } else if (event.key === 'Enter' && !composingName.current && !event.nativeEvent.isComposing && event.keyCode !== 229) {
+              event.preventDefault();
+              void renameNote(event.currentTarget.value);
+            }
+          }} onBlur={event => {
+            if (skipNameBlur.current) { skipNameBlur.current = false; return; }
+            if (!composingName.current) void renameNote(event.currentTarget.value);
+          }} />
+        <details className="cm-notes-more" ref={more}>
+          <summary aria-label={copy.moreActions} title={copy.moreActions}><MoreIcon size={16} /></summary>
+          <div className="cm-notes-more-menu">
+            {!isCanvas && <>
+              <button type="button" disabled={activeMode === 'source' && richUnavailable} onClick={() => {
+                if (more.current) more.current.open = false;
+                setMode(activeMode === 'source' ? 'document' : 'source');
+              }}>{activeMode === 'source' ? copy.returnDocument : copy.viewMarkdown}</button>
+              <button type="button" aria-pressed={formattingOpen} onClick={() => {
+                if (more.current) more.current.open = false;
+                setFormattingOpen(value => !value);
+              }}>{formattingOpen ? copy.hideFormatting : copy.showFormatting}</button>
+            </>}
+            {saveFailure && <button type="button" disabled={mutating} onClick={() => {
+              if (more.current) more.current.open = false;
+              void save();
+            }}>{copy.retrySave}</button>}
+            <button type="button" data-danger disabled={mutating} onClick={() => {
+              if (more.current) more.current.open = false;
+              setConfirmation('delete');
+            }}>{copy.delete}</button>
+          </div>
+        </details>
       </div>
-      {!isCanvas && <div className="cm-notes-modes" role="group" aria-label={copy.editorMode}>
-        <button type="button" aria-pressed={activeMode === 'document'} disabled={richUnavailable} onClick={() => setMode('document')}>{copy.documentMode}</button>
-        <button type="button" aria-pressed={activeMode === 'source'} onClick={() => setMode('source')}>{copy.markdownMode}</button>
-        <button type="button" aria-pressed={activeMode === 'preview'} onClick={() => setMode('preview')}>{copy.preview}</button>
-      </div>}
       {richUnavailable && !isCanvas && <p className="cm-notes-format-notice" role="status">{copy.richUnavailable}</p>}
       {confirmation && <div role="alertdialog" aria-label={confirmation === 'delete' ? copy.delete : copy.conflictReload}>
         <p>{confirmation === 'delete' ? copy.deleteConfirm : copy.reloadConfirm}</p>
@@ -502,13 +570,6 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
         {wiki.candidates.length === 0
           && <button type="button" onClick={() => void createFromWiki(wiki.target)}>{copy.wikiCreate}</button>}
       </div>}
-      {renaming !== undefined && <div role="alertdialog" aria-label={copy.rename}>
-        <input autoFocus value={renameDraft} aria-label={copy.renameLabel}
-          onChange={event => setRenameDraft(event.target.value)}
-          onKeyDown={event => { if (event.key === 'Enter') void renameNote(renameDraft); }} />
-        <button type="button" onClick={() => setRenaming(undefined)}>{copy.cancel}</button>
-        <button type="button" onClick={() => void renameNote(renameDraft)}>{copy.rename}</button>
-      </div>}
       {isCanvas
         ? <>
           <p className="cm-notes-canvas-notice"><InfoIcon size={13} />{copy.canvasReadOnly}</p>
@@ -516,21 +577,14 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
         </>
         : <>
           <RichNoteEditor key={open.id} documentKey={open.id} markdown={draft}
-            hidden={!visible || activeMode !== 'document'} readOnly={status.state === 'saving' || status.state === 'loading' || !visible || activeMode !== 'document'}
-            copy={copy} onChange={text => {
-              setDraft(text);
-              if (text === open.text) drafts.delete(open.id);
-              else drafts.set(open.id, { note: open, text });
-            }} onUnavailable={() => setRichUnavailable(true)} />
-          <textarea hidden={activeMode !== 'source'} value={draft} readOnly={status.state === 'saving' || status.state === 'loading'} spellCheck={false} aria-label={copy.markdownSource} onChange={event => {
+            hidden={!visible || activeMode !== 'document'} readOnly={mutating || status.state === 'loading' || !visible || activeMode !== 'document'}
+            showToolbar={formattingOpen} copy={copy} onChange={editDraft} onUnavailable={() => setRichUnavailable(true)} />
+          <textarea hidden={activeMode !== 'source'} value={draft} readOnly={mutating || status.state === 'loading'} spellCheck={false} aria-label={copy.markdownSource} onChange={event => {
             const text = event.target.value;
             setMode('source');
             setRichUnavailable(false);
-            setDraft(text);
-            if (text === open.text) drafts.delete(open.id);
-            else drafts.set(open.id, { note: open, text });
+            editDraft(text);
           }} />
-          {activeMode === 'preview' && <div className="cm-notes-preview">{blocks.map((block, index) => <BlockView key={index} block={block} onWiki={openWiki} />)}</div>}
         </>}
       <button type="button" className="cm-notes-details-toggle" aria-label={copy.noteDetails}
         aria-expanded={detailsOpen} aria-controls={detailsId} aria-describedby={proposalCountId} onClick={() => setDetailsOpen(value => !value)}>
@@ -541,25 +595,30 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
       <div id={detailsId} className="cm-notes-side" role="region" aria-label={copy.noteDetails} hidden={!detailsOpen}>
         <h3 className="cm-notes-section"><ProposalIcon size={13} />{copy.proposals}</h3>
         {proposals.length === 0 ? <p>{copy.noProposals}</p> : proposals.map(entry => <div key={entry.proposal.proposalId} className="cm-notes-proposal">
-          <button type="button" className="cm-notes-item" disabled={status.state === 'saving'}
+          <button type="button" className="cm-notes-item" disabled={mutating}
             onClick={() => void openNote(entry.proposal.id)}><span>{entry.proposal.id}</span></button>
           <pre className="cm-notes-diff">{entry.diff.lines.map(line => `${line.kind === 'add' ? '+' : line.kind === 'remove' ? '-' : ' '} ${line.text}`).join('\n')}</pre>
           <div className="cm-notes-actions">
-            <button type="button" disabled={status.state === 'saving'} onClick={() => void applyProposal(entry.proposal.proposalId)}>{copy.applyProposal}</button>
-            <button type="button" disabled={status.state === 'saving'} onClick={() => void discardProposal(entry.proposal.proposalId)}>{copy.discardProposal}</button>
+            <button type="button" disabled={mutating} onClick={() => void applyProposal(entry.proposal.proposalId)}>{copy.applyProposal}</button>
+            <button type="button" disabled={mutating} onClick={() => void discardProposal(entry.proposal.proposalId)}>{copy.discardProposal}</button>
           </div>
         </div>)}
+        {open.links.length > 0 && <>
+          <h3 className="cm-notes-section"><NoteIcon size={13} />{copy.linkedNotes}</h3>
+          {open.links.map(target => <button key={target} type="button" className="cm-notes-item" disabled={mutating}
+            onClick={() => openWiki(target)}><span>{target}</span></button>)}
+        </>}
         <h3 className="cm-notes-section"><BacklinkIcon size={13} />{copy.backlinks}</h3>
-        {backlinks.length === 0 ? <p>{copy.noBacklinks}</p> : backlinks.map(entry => <button key={entry.id} type="button" className="cm-notes-item" disabled={status.state === 'saving'} onClick={() => void openNote(entry.id)}><span>{entry.title}</span></button>)}
+        {backlinks.length === 0 ? <p>{copy.noBacklinks}</p> : backlinks.map(entry => <button key={entry.id} type="button" className="cm-notes-item" disabled={mutating} onClick={() => void openNote(entry.id)}><span>{entry.title}</span></button>)}
         <h3 className="cm-notes-section"><TagIcon size={13} />{copy.tags}</h3>
         {tags.length === 0 ? <p>{copy.noTags}</p> : tags.map(tag => <span key={tag.tag} className="cm-notes-chip">{tag.tag} · {tag.count}</span>)}
       </div>
     </div>}
     </div>
-    <div className="cm-notes-notice" role="status" data-state={status.state}>
-      <span className="cm-notes-status" data-state={status.state}>{dirty ? copy.dirty : copy[status.state === 'conflict' ? 'conflict' : status.state === 'error' ? 'error' : status.state === 'saving' ? 'saving' : status.state === 'saved' ? 'saved' : 'vault']}</span>
-      {status.state === 'conflict' && open && <button type="button" onClick={() => setConfirmation('reload')}>{copy.conflictReload}</button>}
-      {status.message !== undefined && <span className="cm-notes-status" data-state={status.state}> · {status.message}</span>}
+    <div className="cm-notes-notice" role="status" data-state={displayStatus.state}>
+      <span className="cm-notes-status" data-state={displayStatus.state}>{copy[displayStatus.state === 'idle' ? 'vault' : displayStatus.state]}</span>
+      {displayStatus.state === 'conflict' && open && <button type="button" onClick={() => setConfirmation('reload')}>{copy.conflictReload}</button>}
+      {displayStatus.message !== undefined && <span className="cm-notes-status" data-state={displayStatus.state}> · {displayStatus.message}</span>}
     </div>
   </section>;
 }
@@ -567,15 +626,20 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
 /** Register the notes tab and its scoped styles for the plugin lifetime. */
 export function apply(ctx: NotesClientServices): void {
   // Drafts survive tab unmounts until this plugin is disposed.
-  const sessions = new Map<string, Drafts>();
+  const sessions = new Map<string, NotesAutosave>();
   ctx.effect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (![...sessions.values()].some(drafts => drafts.size > 0)) return;
+      if (![...sessions.values()].some(session => session.drafts.size > 0)) return;
+      for (const session of sessions.values()) void session.flushAll();
       event.preventDefault();
       event.returnValue = '';
     };
     window.addEventListener('beforeunload', warn);
-    return () => { window.removeEventListener('beforeunload', warn); sessions.clear(); };
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+      for (const session of sessions.values()) void session.flushAll();
+      sessions.clear();
+    };
   }, 'clawmaster: unsaved note drafts');
   ctx.effect(() => {
     const style = document.createElement('style');
@@ -592,9 +656,12 @@ export function apply(ctx: NotesClientServices): void {
     order: 30,
     single: true,
     component: ({ scope, visible }) => {
-      let drafts = sessions.get(scope.sessionId);
-      if (!drafts) { drafts = new Map(); sessions.set(scope.sessionId, drafts); }
-      return <NotesPanel key={scope.sessionId} ctx={ctx} drafts={drafts} visible={visible} />;
+      let autosave = sessions.get(scope.sessionId);
+      if (!autosave) {
+        autosave = new NotesAutosave(new NotesApi((input, init) => fetch(input as string, init)));
+        sessions.set(scope.sessionId, autosave);
+      }
+      return <NotesPanel key={scope.sessionId} ctx={ctx} autosave={autosave} visible={visible} />;
     },
   }), 'clawmaster: notes tab');
 }
