@@ -26,13 +26,15 @@ ClawMaster includes a local notebook for Markdown editing, previews, wiki links,
 
 This private component is included in the ClawMaster desktop profile through its [bundle patch](cordis.patch.yml). Open **Notes** from the sidebar tab selector. The host creates the configured vault when the plugin loads and seeds a welcome note when it contains no supported notes.
 
+Selecting a note collapses the directory to give the editor the panel's available height. Use **Note list** in the toolbar to show or hide it. On a wide panel the directory opens beside the editor; on a narrow panel it overlays the editor until you choose a note or close it. For more space, use the host sidebar's fullscreen control.
+
 Create or open a note, edit its text and choose **Save**. A revision conflict preserves both your draft and the newer file. **Reload** explicitly asks before discarding that draft. Switching notes or closing and reopening the Notes tab retains drafts for the same Session while the plugin remains loaded. **Delete** requires confirmation and does not use the trash. **Rename** moves the note and retains its local draft, refusing an occupied destination. **Today's note** opens the dated diary note, creating it once.
 
 A wiki link resolves to its note; when several notes match you choose, and when none matches you are offered the note's creation. A `.canvas` file opens read-only with saving and renaming disabled, because this component has no canvas editor.
 
-**Proposals** appear in the side panel with the diff they would apply, each with **Apply** and **Discard**. Applying is revision-guarded: if the note moved since the proposal was drafted, the apply is refused and the proposal stays for a retry. Applying also preserves any unsaved local draft, which must be reconciled before saving.
+**Note details** starts collapsed and opens the tags, backlinks and **Proposals**. The pending proposal count remains visible when the section is collapsed. Expand it to review a proposal's diff, then explicitly choose **Apply** or **Discard**; opening the section does not apply changes. Applying is revision-guarded: if the note moved since the proposal was drafted, the apply is refused and the proposal stays for a retry. Applying also preserves any unsaved local draft, which must be reconciled before saving.
 
-While the tab is visible the panel polls every four seconds for a version covering both notes and pending proposals, so external edits and proposal creation or discard appear without a manual refresh. An unsaved draft is never discarded by that refresh: the panel reports the external change and offers a reload. Note, tag and proposal refreshes settle independently. A failed proposal listing keeps its error and retry action visible while successfully loaded notes and tags remain usable.
+While the tab is visible the panel polls every four seconds for a version covering both notes and pending proposals, so external edits and proposal creation or discard appear without a manual refresh. An unsaved draft is never discarded by that refresh: the panel reports the external change and offers a reload. Note, tag and proposal refreshes settle independently. A failed proposal listing retains its error and retry action while successfully loaded notes and tags remain usable.
 
 <a id="configuration"></a>
 ## Configuration

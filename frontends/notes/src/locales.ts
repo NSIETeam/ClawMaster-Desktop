@@ -6,6 +6,8 @@ export interface NotesCopy {
   tab: string;
   tabDescription: string;
   vault: string;
+  noteList: string;
+  noteDetails: string;
   newNote: string;
   noteName: string;
   create: string;
@@ -56,6 +58,7 @@ export interface NotesCopy {
 const copy: Record<NotesLocale, NotesCopy> = {
   'zh-CN': {
     tab: '笔记', tabDescription: '内置 Markdown 笔记库：双向链接、反链、标签与全文搜索',
+    noteList: '笔记目录', noteDetails: '笔记信息',
     vault: '笔记库', newNote: '新建笔记', noteName: '笔记名称', create: '创建', cancel: '取消',
     search: '搜索笔记', searchPlaceholder: '输入关键词…', results: '搜索结果', noResults: '没有匹配的笔记',
     line: '第', rename: '重命名', renameLabel: '新名称', todayNote: '今日笔记',
@@ -74,6 +77,7 @@ const copy: Record<NotesLocale, NotesCopy> = {
   },
   'en-US': {
     tab: 'Notes', tabDescription: 'Built-in Markdown vault: wiki links, backlinks, tags and search',
+    noteList: 'Note list', noteDetails: 'Note details',
     vault: 'Vault', newNote: 'New note', noteName: 'Note name', create: 'Create', cancel: 'Cancel',
     search: 'Search notes', searchPlaceholder: 'Type a keyword…', results: 'Results', noResults: 'No matching notes',
     line: 'line', rename: 'Rename', renameLabel: 'New name', todayNote: "Today's note",

@@ -127,14 +127,109 @@ async function fixture(locale = 'zh', extra = {}, pendingProposals = [], failure
   const mount = () => render(React.createElement(tab.component, { scope: { sessionId: 'synthetic-session' }, visible: true }));
   const view = mount();
   await screen.findByRole('button', { name: 'Alpha' });
-  const copy = locale === 'zh' ? { edit: '编辑', save: '保存', reload: '重新载入', cancel: '取消', delete: '删除', dirty: '未保存' }
-    : { edit: 'Edit', save: 'Save', reload: 'Reload', cancel: 'Cancel', delete: 'Delete', dirty: 'Unsaved' };
-  const open = async id => { fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${id}( |$)`) })); await screen.findByRole('heading', { name: id }); };
+  const copy = locale === 'zh'
+    ? { edit: '编辑', preview: '预览', save: '保存', reload: '重新载入', cancel: '取消', delete: '删除', dirty: '未保存', library: '笔记目录', details: '笔记信息', proposals: '待审建议', search: '搜索笔记', apply: '应用' }
+    : { edit: 'Edit', preview: 'Preview', save: 'Save', reload: 'Reload', cancel: 'Cancel', delete: 'Delete', dirty: 'Unsaved', library: 'Note list', details: 'Note details', proposals: 'Proposals', search: 'Search notes', apply: 'Apply' };
+  const show = label => {
+    const button = screen.getByRole('button', { name: label });
+    if (button.getAttribute('aria-expanded') === 'false') fireEvent.click(button);
+    return screen.getByRole('region', { name: label });
+  };
+  const library = () => show(copy.library);
+  const details = () => show(copy.details);
+  const open = async id => {
+    library();
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${id}( |$)`) }));
+    await screen.findByRole('heading', { name: id });
+  };
   const editor = () => screen.getByRole('textbox', { name: copy.edit });
-  return { disk, requests, view, mount, copy, open, editor, tab: () => tab, delay: handler => { delayRead = handler; } };
+  return { disk, requests, view, mount, copy, open, editor, library, details, tab: () => tab, delay: handler => { delayRead = handler; } };
 }
 
 for (const locale of ['zh', 'en']) {
+  it(`shows the library until a note opens and then gives the editor both collapsed regions (${locale})`, async () => {
+    const f = await fixture(locale);
+    const listButton = screen.getByRole('button', { name: f.copy.library });
+    const list = screen.getByRole('region', { name: f.copy.library });
+    expect(listButton.getAttribute('aria-expanded')).toBe('true');
+    expect(listButton.getAttribute('aria-controls')).toBe(list.id);
+    expect(list.hidden).toBe(false);
+    await f.open('Alpha');
+    expect(listButton.getAttribute('aria-expanded')).toBe('false');
+    expect(list.hidden).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Beta' })).toBeNull();
+    const detailsButton = screen.getByRole('button', { name: f.copy.details });
+    const details = document.getElementById(detailsButton.getAttribute('aria-controls'));
+    expect(details).not.toBeNull();
+    expect(details.getAttribute('aria-label')).toBe(f.copy.details);
+    expect(detailsButton.getAttribute('aria-expanded')).toBe('false');
+    expect(details.hidden).toBe(true);
+    expect(screen.queryByRole('region', { name: f.copy.details })).toBeNull();
+    expect(f.editor().value).toBe('# Alpha\n');
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
+  });
+
+  it(`retains the unsaved editor node, selection and scroll across panels and preview (${locale})`, async () => {
+    const f = await fixture(locale);
+    await f.open('Alpha');
+    const editor = f.editor();
+    const draft = 'A local draft\n'.repeat(40);
+    fireEvent.change(editor, { target: { value: draft } });
+    editor.setSelectionRange(4, 10, 'backward');
+    editor.scrollTop = 180;
+    for (const label of [f.copy.library, f.copy.details]) {
+      const button = screen.getByRole('button', { name: label });
+      const region = document.getElementById(button.getAttribute('aria-controls'));
+      for (const expanded of [true, false]) {
+        fireEvent.click(button);
+        expect(button.getAttribute('aria-expanded')).toBe(String(expanded));
+        expect(region.hidden).toBe(!expanded);
+        expect(f.editor()).toBe(editor);
+        expect(editor.value).toBe(draft);
+        expect([editor.selectionStart, editor.selectionEnd, editor.selectionDirection]).toEqual([4, 10, 'backward']);
+        expect(editor.scrollTop).toBe(180);
+        expect(screen.getByRole('status').textContent).toContain(f.copy.dirty);
+      }
+    }
+    fireEvent.click(screen.getByRole('button', { name: f.copy.preview }));
+    expect(screen.queryByRole('textbox', { name: f.copy.edit })).toBeNull();
+    expect(editor.isConnected).toBe(true);
+    expect(editor.hidden).toBe(true);
+    expect(editor.value).toBe(draft);
+    fireEvent.click(screen.getByRole('button', { name: f.copy.edit }));
+    expect(f.editor()).toBe(editor);
+    expect(editor.hidden).toBe(false);
+    expect([editor.selectionStart, editor.selectionEnd, editor.selectionDirection]).toEqual([4, 10, 'backward']);
+    expect(editor.scrollTop).toBe(180);
+    expect(f.disk.get('Alpha.md')).toBe('# Alpha\n');
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: f.copy.save }));
+    await waitFor(() => expect(f.disk.get('Alpha.md')).toBe(draft));
+  });
+
+  it(`reveals search results from the collapsed library without changing the open draft (${locale})`, async () => {
+    const f = await fixture(locale);
+    await f.open('Alpha');
+    const editor = f.editor();
+    fireEvent.change(editor, { target: { value: 'unfinished Alpha draft' } });
+    const search = screen.getByRole('textbox', { name: f.copy.search });
+    fireEvent.change(search, { target: { value: 'Beta' } });
+    fireEvent.keyDown(search, { key: 'Enter' });
+    const list = await screen.findByRole('region', { name: f.copy.library });
+    await within(list).findByText('# Beta');
+    expect(screen.getByRole('button', { name: f.copy.library }).getAttribute('aria-expanded')).toBe('true');
+    expect(list.hidden).toBe(false);
+    expect(f.editor()).toBe(editor);
+    expect(editor.value).toBe('unfinished Alpha draft');
+    fireEvent.click(within(list).getByRole('button', { name: /^Beta / }));
+    await screen.findByRole('heading', { name: 'Beta' });
+    expect(list.hidden).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: f.copy.cancel }));
+    await f.open('Alpha');
+    expect(f.editor().value).toBe('unfinished Alpha draft');
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
+  });
+
   it(`shows proposal errors with retry while notes remain editable and drafts survive (${locale})`, async () => {
     const failures = { proposals: 'Pending proposal byte limit exceeded' };
     const f = await fixture(locale, {}, [], failures);
@@ -257,6 +352,8 @@ it('uses actual backlinks rather than listing all other notes', async () => {
   const f = await fixture();
   await f.open('Alpha');
   await waitFor(() => expect(f.requests.some(item => item.path.endsWith('/backlinks'))).toBe(true));
+  f.library();
+  f.details();
   expect(screen.getAllByRole('button', { name: 'Beta' })).toHaveLength(1);
   expect(screen.getByText('暂无反向链接')).toBeDefined();
 });
@@ -347,20 +444,34 @@ const proposalFixture = () => ({
   },
 });
 
-it('shows a pending proposal with its diff and applies it', async () => {
-  const f = await fixture('zh', {}, [proposalFixture()]);
-  await f.open('Alpha');
-  expect(screen.getByText('待审建议')).toBeDefined();
-  expect(screen.getByText(/\+ reviewed/)).toBeDefined();
-  fireEvent.click(screen.getByRole('button', { name: '应用' }));
-  await waitFor(() => expect(f.disk.get('Alpha.md')).toBe('# Alpha\nreviewed\n'));
-  await waitFor(() => expect(screen.queryByRole('button', { name: '应用' })).toBeNull());
-  expect(f.requests.some(item => item.command?.action === 'apply-proposal')).toBe(true);
-});
+for (const locale of ['zh', 'en']) {
+  it(`keeps pending proposals discoverable while details are collapsed and applies only on request (${locale})`, async () => {
+    const f = await fixture(locale, {}, [proposalFixture()]);
+    await f.open('Alpha');
+    const detailsButton = screen.getByRole('button', { name: f.copy.details });
+    expect(detailsButton.getAttribute('aria-expanded')).toBe('false');
+    expect(detailsButton.textContent).toContain(`${f.copy.proposals} 1`);
+    const count = document.getElementById(detailsButton.getAttribute('aria-describedby'));
+    expect(count).not.toBeNull();
+    expect(count.textContent).toBe(`${f.copy.proposals} 1`);
+    expect(count.closest('[hidden]')).toBeNull();
+    expect(screen.queryByRole('button', { name: f.copy.apply })).toBeNull();
+    expect(f.disk.get('Alpha.md')).toBe('# Alpha\n');
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
+    const details = f.details();
+    expect(within(details).getByText(/\+ reviewed/)).toBeDefined();
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
+    fireEvent.click(within(details).getByRole('button', { name: f.copy.apply }));
+    await waitFor(() => expect(f.disk.get('Alpha.md')).toBe('# Alpha\nreviewed\n'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: f.copy.apply })).toBeNull());
+    expect(f.requests.filter(item => item.command?.action === 'apply-proposal')).toHaveLength(1);
+  });
+}
 
 it('discards a proposal without touching the note', async () => {
   const f = await fixture('zh', {}, [proposalFixture()]);
   await f.open('Alpha');
+  f.details();
   fireEvent.click(screen.getByRole('button', { name: '丢弃' }));
   await waitFor(() => expect(screen.queryByRole('button', { name: '丢弃' })).toBeNull());
   expect(f.disk.get('Alpha.md')).toBe('# Alpha\n');
@@ -371,6 +482,7 @@ it('shows a proposal conflict instead of overwriting the note', async () => {
   const f = await fixture('zh', {}, [proposalFixture()]);
   f.disk.set('Alpha.md', 'changed underneath\n');
   await f.open('Alpha');
+  f.details();
   fireEvent.click(screen.getByRole('button', { name: '应用' }));
   await waitFor(() => expect(screen.getByRole('status').dataset.state).toBe('conflict'));
   expect(f.disk.get('Alpha.md')).toBe('changed underneath\n');
@@ -435,6 +547,7 @@ it('preserves a local draft while applying a proposal and still refuses a stale 
   const f = await fixture('zh', {}, [proposalFixture()]);
   await f.open('Alpha');
   fireEvent.change(f.editor(), { target: { value: 'local draft must survive' } });
+  f.details();
   fireEvent.click(screen.getByRole('button', { name: '应用' }));
   await waitFor(() => expect(f.disk.get('Alpha.md')).toBe('# Alpha\nreviewed\n'));
   await waitFor(() => expect(screen.getByRole('status').dataset.state).toBe('conflict'));
@@ -489,6 +602,9 @@ for (const locale of ['zh', 'en']) {
     expect(screen.queryByRole('button', { name: applyLabel })).toBeNull();
     pending.push(proposalFixture());
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    await waitFor(() => expect(screen.getByRole('button', { name: f.copy.details }).textContent).toContain(`${f.copy.proposals} 1`));
+    expect(screen.queryByRole('button', { name: applyLabel })).toBeNull();
+    f.details();
     await waitFor(() => expect(screen.getByRole('button', { name: applyLabel })).toBeDefined());
     expect(f.editor().value).toBe('keep local draft');
     pending.splice(0);
@@ -509,6 +625,7 @@ for (const locale of ['zh', 'en']) {
     f.disk.set('Gamma.md', '# External addition\n');
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
     await waitFor(() => expect(f.editor().value).toBe('externally updated note'));
+    f.library();
     expect(screen.getByRole('button', { name: 'Gamma' })).toBeDefined();
     expect(f.requests.filter(item => item.command)).toHaveLength(0);
     const revisionRequests = f.requests.filter(item => item.path.endsWith('/revision')).length;

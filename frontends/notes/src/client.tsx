@@ -1,5 +1,5 @@
 /** ClawMaster Notes: the built-in Markdown vault as a native sidebar tab. */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { NotesApi, NotesApiError } from './notes-api.ts';
 import { inlineTokens, parseMarkdown, type Block } from './markdown.ts';
@@ -99,6 +99,11 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
   const [open, setOpen] = useState<NoteRead | undefined>(() => drafts.values().next().value?.note);
   const [draft, setDraft] = useState(() => drafts.values().next().value?.text ?? '');
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const libraryId = useId();
+  const detailsId = useId();
+  const proposalCountId = useId();
   const [status, setStatus] = useState<Status>({ state: 'idle' });
   const [refreshError, setRefreshError] = useState<string>();
   const [backlinks, setBacklinks] = useState<NoteEntry[]>([]);
@@ -191,6 +196,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
       if (requestGeneration !== generation.current) return;
       if (reload) drafts.delete(id);
       setOpen(note);
+      setLibraryOpen(false);
       setDraft(retained?.text ?? note.text);
       setMode('edit');
       setStatus({ state: 'idle' });
@@ -292,6 +298,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
   }, [api, fail, refresh]);
 
   const runSearch = useCallback(async () => {
+    setLibraryOpen(true);
     if (query.trim() === '') { setMatches(undefined); return; }
     try { setMatches((await api.search(query.trim())).matches); }
     catch (error) { fail(error); }
@@ -376,6 +383,11 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
 
   return <section className="cm-notes" aria-label={copy.tab}>
     <div className="cm-notes-bar">
+      <button type="button" className="cm-notes-tool cm-notes-library-toggle" aria-label={copy.noteList}
+        title={copy.noteList} aria-expanded={!open || libraryOpen} aria-controls={libraryId}
+        disabled={!open} onClick={() => setLibraryOpen(value => !value)}>
+        <FolderIcon size={16} />
+      </button>
       <div className="cm-notes-search">
         <SearchIcon size={14} className="cm-notes-glyph" />
         <input value={query} placeholder={copy.searchPlaceholder} aria-label={copy.search}
@@ -402,7 +414,8 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
         onKeyDown={event => { if (event.key === 'Enter') void createNote(); }} />
       <button type="button" onClick={() => void createNote()}>{copy.create}</button>
     </div>}
-    <div className="cm-notes-body">
+    <div className="cm-notes-workspace" data-editing={open !== undefined}>
+    <div id={libraryId} className="cm-notes-body" role="region" aria-label={copy.noteList} hidden={!!open && !libraryOpen}>
       {matches !== undefined
         ? matches.length === 0
           ? <p className="cm-notes-empty">{copy.noResults}</p>
@@ -495,15 +508,22 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
           <p className="cm-notes-canvas-notice"><InfoIcon size={13} />{copy.canvasReadOnly}</p>
           <pre className="cm-notes-canvas">{draft}</pre>
         </>
-        : mode === 'edit'
-          ? <textarea value={draft} readOnly={status.state === 'saving' || status.state === 'loading'} spellCheck={false} aria-label={copy.edit} onChange={event => {
+        : <>
+          <textarea hidden={mode !== 'edit'} value={draft} readOnly={status.state === 'saving' || status.state === 'loading'} spellCheck={false} aria-label={copy.edit} onChange={event => {
             const text = event.target.value;
             setDraft(text);
             if (text === open.text) drafts.delete(open.id);
             else drafts.set(open.id, { note: open, text });
           }} />
-          : <div className="cm-notes-preview">{blocks.map((block, index) => <BlockView key={index} block={block} onWiki={openWiki} />)}</div>}
-      <div className="cm-notes-side">
+          {mode === 'preview' && <div className="cm-notes-preview">{blocks.map((block, index) => <BlockView key={index} block={block} onWiki={openWiki} />)}</div>}
+        </>}
+      <button type="button" className="cm-notes-details-toggle" aria-label={copy.noteDetails}
+        aria-expanded={detailsOpen} aria-controls={detailsId} aria-describedby={proposalCountId} onClick={() => setDetailsOpen(value => !value)}>
+        <ChevronIcon size={12} className={detailsOpen ? 'cm-notes-chevron cm-notes-chevron-open' : 'cm-notes-chevron'} />
+        <span>{copy.noteDetails}</span>
+        <span id={proposalCountId} className="cm-notes-details-count" data-pending={proposals.length > 0}>{copy.proposals} {proposals.length}</span>
+      </button>
+      <div id={detailsId} className="cm-notes-side" role="region" aria-label={copy.noteDetails} hidden={!detailsOpen}>
         <h3 className="cm-notes-section"><ProposalIcon size={13} />{copy.proposals}</h3>
         {proposals.length === 0 ? <p>{copy.noProposals}</p> : proposals.map(entry => <div key={entry.proposal.proposalId} className="cm-notes-proposal">
           <button type="button" className="cm-notes-item" disabled={status.state === 'saving'}
@@ -520,6 +540,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
         {tags.length === 0 ? <p>{copy.noTags}</p> : tags.map(tag => <span key={tag.tag} className="cm-notes-chip">{tag.tag} · {tag.count}</span>)}
       </div>
     </div>}
+    </div>
     <div className="cm-notes-notice" role="status" data-state={status.state}>
       <span className="cm-notes-status" data-state={status.state}>{dirty ? copy.dirty : copy[status.state === 'conflict' ? 'conflict' : status.state === 'error' ? 'error' : status.state === 'saving' ? 'saving' : status.state === 'saved' ? 'saved' : 'vault']}</span>
       {status.state === 'conflict' && open && <button type="button" onClick={() => setConfirmation('reload')}>{copy.conflictReload}</button>}
@@ -530,7 +551,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
 
 /** Register the notes tab and its scoped styles for the plugin lifetime. */
 export function apply(ctx: NotesClientServices): void {
-  // BetterSidebar has no close veto; drafts survive its tab unmounts until this plugin is disposed.
+  // Drafts survive tab unmounts until this plugin is disposed.
   const sessions = new Map<string, Drafts>();
   ctx.effect(() => {
     const warn = (event: BeforeUnloadEvent) => {

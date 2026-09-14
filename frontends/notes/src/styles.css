@@ -1,25 +1,4 @@
-/*
- * ClawMaster Notes panel styling.
- *
- * Two measured references drive every number here:
- *
- *  1. The host's own file manager (dsh-better-sidebar 0.19.1,
- *     src/client/sidebar.module.css `.explorerRow` / `.explorerDir`): 34px rows,
- *     6px icon gap, `depth * 22 + 6` inline indent, 8px row padding, 8px radius,
- *     `--dsw-font-s-14` labels, `--dsw-font-s-strong-14` directory labels,
- *     `--dsw-alias-interactive-bg-hover` hover and
- *     `--dsw-alias-state-business-tertiary` selection. The notes tree is the same
- *     kind of list, so it reads as host chrome instead of a bolt-on.
- *  2. Obsidian (obsidian.asar `app.css`, `.tree-item-self` / `.nav-file-icon` /
- *     `.tree-item-children`): 13px UI type, 2px row rhythm, 4px row radius,
- *     6px icon gap (`--size-2-3`), indentation guides between levels, chevrons
- *     that fade when collapsed, tags that stay quiet until hover, and muted
- *     section headers.
- *
- * All colours come from host alias tokens so the panel follows light/dark and
- * any future theme change; the literal fallbacks only keep the panel legible if
- * a token disappears.
- */
+/* Notes use host theme tokens and keep navigation outside the writing area. */
 .cm-notes {
   --cm-row-height: 34px;
   --cm-row-gap: 6px;
@@ -46,12 +25,17 @@
   --cm-selected: var(--dsw-alias-state-business-tertiary, rgba(37, 99, 235, .12));
   --cm-accent: var(--dsw-alias-brand-primary, var(--dsw-alias-state-business-primary, #2563eb));
   --cm-guide: var(--dsw-alias-border-l2, rgba(0, 0, 0, .12));
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   font: var(--cm-font);
   color: var(--cm-ink);
+}
+
+.cm-notes [hidden] {
+  display: none;
 }
 
 /* Keyboard focus uses the host's ring shape rather than the browser default. */
@@ -193,6 +177,23 @@
 
 /* ------------------------------------------------------------- file tree -- */
 
+.cm-notes-workspace {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cm-notes-library-toggle {
+  flex: none;
+}
+
+.cm-notes-library-toggle[aria-expanded="true"] {
+  background: var(--cm-selected);
+  color: var(--cm-accent);
+}
+
 .cm-notes-body {
   flex: 1;
   min-height: 0;
@@ -202,14 +203,24 @@
   scroll-padding-block: 4px;
 }
 
-/*
- * Opening a note hands the panel to the note: the tree keeps a 40% rail and the editor takes
- * the rest, so a note is actually readable in a sidebar-width column. Without `:has()` support
- * the rule is ignored and the two halves stay even, which is still usable.
- */
-.cm-notes:has(.cm-notes-editor) .cm-notes-body {
-  flex: 0 1 40%;
-  max-height: 40%;
+/* A narrow pane overlays navigation; a wide pane gives it a separate column. */
+.cm-notes-workspace[data-editing="true"] .cm-notes-body {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 1;
+  box-sizing: border-box;
+  width: min(280px, 100%);
+  border-right: 1px solid var(--cm-line);
+  background: var(--dsw-alias-bg-base, #fff);
+  box-shadow: 6px 0 16px rgba(0, 0, 0, .08);
+}
+
+@container (min-width: 700px) {
+  .cm-notes-workspace[data-editing="true"] .cm-notes-body {
+    position: static;
+    flex: 0 0 240px;
+    box-shadow: none;
+  }
 }
 
 /*
@@ -342,11 +353,12 @@
   flex: 1;
   flex-direction: column;
   min-height: 0;
-  border-top: 1px solid var(--cm-line);
+  min-width: 0;
 }
 
 .cm-notes-head {
   display: flex;
+  flex-wrap: wrap;
   flex: none;
   align-items: center;
   gap: var(--cm-row-gap);
@@ -355,10 +367,10 @@
 }
 
 .cm-notes-head h2 {
-  flex: 1;
+  flex: 1 1 140px;
   min-width: 0;
   margin: 0;
-  font-size: 13.5px;
+  font-size: 15px;
   font-weight: 600;
   line-height: 1.35;
   overflow: hidden;
@@ -369,6 +381,8 @@
 .cm-notes-actions {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 2px;
 }
 
@@ -403,17 +417,18 @@
 
 /* Source and rendered views share one reading measure. */
 .cm-notes textarea {
+  box-sizing: border-box;
   flex: 1;
-  min-height: 140px;
+  min-height: 0;
   width: 100%;
-  padding: 12px 14px;
+  padding: 18px 20px;
   border: 0;
   resize: none;
   background: transparent;
   color: inherit;
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
-  font-size: 12.5px;
-  line-height: 1.65;
+  font-size: 15px;
+  line-height: 1.8;
   outline: none;
   tab-size: 2;
 }
@@ -422,9 +437,9 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 4px 14px 20px;
-  font-size: 13.5px;
-  line-height: 1.7;
+  padding: 8px 20px 24px;
+  font-size: 15px;
+  line-height: 1.8;
 }
 
 .cm-notes-preview > :first-child {
@@ -553,9 +568,38 @@
 
 /* ------------------------------------------------------- side information -- */
 
-.cm-notes-side {
+.cm-notes-details-toggle {
+  display: flex;
   flex: none;
-  max-height: 34%;
+  align-items: center;
+  gap: var(--cm-row-gap);
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 0;
+  border-top: 1px solid var(--cm-line);
+  background: transparent;
+  color: var(--cm-ink-2);
+  font: var(--cm-font-2);
+  cursor: pointer;
+}
+
+.cm-notes-details-toggle:hover {
+  background: var(--cm-hover);
+}
+
+.cm-notes-details-count {
+  margin-left: auto;
+  color: var(--cm-ink-3);
+}
+
+.cm-notes-details-count[data-pending="true"] {
+  color: var(--cm-accent);
+  font-weight: 600;
+}
+
+.cm-notes-side {
+  flex: 0 1 auto;
+  max-height: 30%;
   overflow: auto;
   padding: 8px 10px 12px;
   border-top: 1px solid var(--cm-line);
@@ -743,5 +787,20 @@
 @media (prefers-reduced-motion: reduce) {
   .cm-notes * {
     transition: none !important;
+  }
+}
+
+@container (max-width: 420px) {
+  .cm-notes-bar {
+    flex-wrap: wrap;
+  }
+
+  .cm-notes-search {
+    order: 1;
+    flex-basis: 100%;
+  }
+
+  .cm-notes-tools {
+    margin-left: auto;
   }
 }
