@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import * as React from 'react';
 import * as JSX from 'react/jsx-runtime';
+import * as ReactDOM from 'react-dom';
 // The shipped bundle is pulled in as text so this spec stays free of `node:` imports and
 // can run under the jsdom environment the UI needs.
 import clientSource from '../dist/client.js?raw';
@@ -40,7 +41,7 @@ async function fixture(locale = 'zh', extra = {}, pendingProposals = [], failure
   let factory;
   window.__ModuleLoader__ = { load: entry => { factory = entry.factory; } };
   new Function('window', clientSource)(window);
-  const modules = { react: React, 'react/jsx-runtime': JSX };
+  const modules = { react: React, 'react/jsx-runtime': JSX, 'react-dom': ReactDOM };
   const plugin = factory(id => { if (!(id in modules)) throw new Error(`Unexpected client dependency: ${id}`); return modules[id]; });
   // Seed before mount: the panel lists the vault once, on mount.
   const disk = new Map([['Alpha.md', '# Alpha\n'], ['Beta.md', '# Beta\n'], ...Object.entries(extra)]);
@@ -128,8 +129,8 @@ async function fixture(locale = 'zh', extra = {}, pendingProposals = [], failure
   const view = mount();
   await screen.findByRole('button', { name: 'Alpha' });
   const copy = locale === 'zh'
-    ? { edit: '编辑', preview: '预览', save: '保存', reload: '重新载入', cancel: '取消', delete: '删除', dirty: '未保存', library: '笔记目录', details: '笔记信息', proposals: '待审建议', search: '搜索笔记', apply: '应用' }
-    : { edit: 'Edit', preview: 'Preview', save: 'Save', reload: 'Reload', cancel: 'Cancel', delete: 'Delete', dirty: 'Unsaved', library: 'Note list', details: 'Note details', proposals: 'Proposals', search: 'Search notes', apply: 'Apply' };
+    ? { edit: '编辑', body: '笔记正文', source: 'Markdown 源码', document: '文档', unavailable: '这篇笔记包含暂不支持的格式，原文已保留，请使用 Markdown 源码编辑。', preview: '预览', save: '保存', reload: '重新载入', cancel: '取消', delete: '删除', dirty: '未保存', library: '笔记目录', details: '笔记信息', proposals: '待审建议', search: '搜索笔记', apply: '应用' }
+    : { edit: 'Edit', body: 'Note body', source: 'Markdown source', document: 'Document', unavailable: 'This note contains unsupported formatting. The original text is preserved; use Markdown source to edit it.', preview: 'Preview', save: 'Save', reload: 'Reload', cancel: 'Cancel', delete: 'Delete', dirty: 'Unsaved', library: 'Note list', details: 'Note details', proposals: 'Proposals', search: 'Search notes', apply: 'Apply' };
   const show = label => {
     const button = screen.getByRole('button', { name: label });
     if (button.getAttribute('aria-expanded') === 'false') fireEvent.click(button);
@@ -137,13 +138,20 @@ async function fixture(locale = 'zh', extra = {}, pendingProposals = [], failure
   };
   const library = () => show(copy.library);
   const details = () => show(copy.details);
-  const open = async id => {
+  const source = async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown', exact: true }));
+    return screen.findByRole('textbox', { name: copy.source });
+  };
+  const open = async (id, mode = 'source') => {
     library();
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${id}( |$)`) }));
-    await screen.findByRole('heading', { name: id });
+    await waitFor(() => expect(document.querySelector('.cm-notes-head h2')?.textContent).toBe(id));
+    if (mode === 'source' && screen.queryByRole('button', { name: 'Markdown', exact: true })) await source();
   };
-  const editor = () => screen.getByRole('textbox', { name: copy.edit });
-  return { disk, requests, view, mount, copy, open, editor, library, details, tab: () => tab, delay: handler => { delayRead = handler; } };
+  const editor = () => screen.getByRole('textbox', { name: copy.source });
+  const richEditor = () => screen.getByRole('textbox', { name: copy.body });
+  const title = () => within(document.querySelector('.cm-notes-head'));
+  return { disk, requests, view, mount, copy, open, source, editor, richEditor, title, library, details, tab: () => tab, delay: handler => { delayRead = handler; } };
 }
 
 for (const locale of ['zh', 'en']) {
@@ -192,11 +200,11 @@ for (const locale of ['zh', 'en']) {
       }
     }
     fireEvent.click(screen.getByRole('button', { name: f.copy.preview }));
-    expect(screen.queryByRole('textbox', { name: f.copy.edit })).toBeNull();
+    expect(screen.queryByRole('textbox', { name: f.copy.source })).toBeNull();
     expect(editor.isConnected).toBe(true);
     expect(editor.hidden).toBe(true);
     expect(editor.value).toBe(draft);
-    fireEvent.click(screen.getByRole('button', { name: f.copy.edit }));
+    fireEvent.click(screen.getByRole('button', { name: 'Markdown', exact: true }));
     expect(f.editor()).toBe(editor);
     expect(editor.hidden).toBe(false);
     expect([editor.selectionStart, editor.selectionEnd, editor.selectionDirection]).toEqual([4, 10, 'backward']);
@@ -299,6 +307,8 @@ for (const locale of ['zh', 'en']) {
     expect(f.editor().value).toBe('retained draft');
     f.view.unmount();
     const reopened = f.mount();
+    await screen.findByRole('button', { name: 'Markdown', exact: true });
+    await f.source();
     await waitFor(() => expect(f.editor().value).toBe('retained draft'));
     expect(f.editor().readOnly).toBe(false);
     const event = new Event('beforeunload', { cancelable: true });
@@ -330,7 +340,7 @@ it('ignores an earlier note read that completes after a newer selection', async 
   fireEvent.click(screen.getByRole('button', { name: 'Alpha' }));
   await f.open('Beta');
   await act(async () => { release(); await pending; });
-  expect(screen.getByRole('heading', { name: 'Beta' })).toBeDefined();
+  expect(f.title().getByRole('heading', { name: 'Beta' })).toBeDefined();
   expect(f.editor().value).toBe('# Beta\n');
 });
 
@@ -380,7 +390,7 @@ it('renames the open note and opens the new path', async () => {
   fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '重命名' }));
   await waitFor(() => expect(f.disk.has('Gamma.md')).toBe(true));
   expect(f.disk.has('Alpha.md')).toBe(false);
-  expect(screen.getByRole('heading', { name: 'Gamma' })).toBeDefined();
+  expect(f.title().getByRole('heading', { name: 'Gamma' })).toBeDefined();
 });
 
 it('offers to create the note a missing wiki link points at', async () => {
@@ -411,7 +421,9 @@ it('shows a canvas file read-only with saving disabled', async () => {
   const f = await fixture('zh', { 'Board.canvas': '{"nodes":[]}' });
   await f.open('Board');
   expect(screen.getByText('画布文件以只读方式显示（本版本尚无画布编辑器）。')).toBeDefined();
-  expect(screen.queryByRole('textbox', { name: '编辑' })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: '笔记正文' })).toBeNull();
+  expect(screen.queryByRole('textbox', { name: 'Markdown 源码' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Markdown', exact: true })).toBeNull();
   expect(screen.getByRole('button', { name: '保存' }).disabled).toBe(true);
   expect(screen.queryByRole('button', { name: '重命名' })).toBeNull();
 });
@@ -428,7 +440,7 @@ it("opens today's daily note, creating it once", async () => {
   const f = await fixture();
   fireEvent.click(screen.getByRole('button', { name: '今日笔记' }));
   await waitFor(() => expect(f.disk.has('日记/2026-09-13.md')).toBe(true));
-  expect(screen.getByRole('heading', { name: '日记/2026-09-13' })).toBeDefined();
+  expect(f.title().getByRole('heading', { name: '日记/2026-09-13' })).toBeDefined();
   expect(f.requests.filter(item => item.command?.action === 'daily')).toHaveLength(1);
 });
 
@@ -538,7 +550,7 @@ for (const locale of ['zh', 'en']) {
     await f.open('Beta');
     fireEvent.change(f.editor(), { target: { value: 'Beta local draft' } });
     await act(async () => { release.resolve(); });
-    expect(screen.getByRole('heading', { name: 'Beta' })).toBeDefined();
+    expect(f.title().getByRole('heading', { name: 'Beta' })).toBeDefined();
     expect(f.editor().value).toBe('Beta local draft');
   });
 }
@@ -632,5 +644,74 @@ for (const locale of ['zh', 'en']) {
     f.view.unmount();
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
     expect(f.requests.filter(item => item.path.endsWith('/revision'))).toHaveLength(revisionRequests);
+  });
+}
+
+for (const locale of ['zh', 'en']) {
+  it(`opens ordinary Markdown as an editable formatted document by default (${locale})`, async () => {
+    const original = '# 本周计划\n\n**重要事项**\n\n- 核对数据\n- 完成复盘\n';
+    const f = await fixture(locale, { 'Plan.md': original });
+    await f.open('Plan', 'document');
+    const body = await screen.findByRole('textbox', { name: f.copy.body });
+    expect(body.getAttribute('contenteditable')).toBe('true');
+    expect(within(body).getByRole('heading', { level: 1, name: '本周计划' })).toBeDefined();
+    expect(body.querySelector('strong')?.textContent).toBe('重要事项');
+    expect(within(body).getAllByRole('listitem')).toHaveLength(2);
+    expect(body.textContent).not.toContain('# 本周计划');
+    expect(body.textContent).not.toContain('**重要事项**');
+    expect(screen.queryByRole('textbox', { name: f.copy.source })).toBeNull();
+    expect(screen.getByRole('button', { name: f.copy.document, exact: true }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: f.copy.save }).disabled).toBe(true);
+    expect(f.disk.get('Plan.md')).toBe(original);
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
+  });
+
+  it(`preserves original frontmatter and line endings when only switching document modes (${locale})`, async () => {
+    const original = '---\r\ntags: [工作]\r\ncustom: "保留字节"\r\n---\r\n\r\n# 本周计划\r\n\r\n**重要事项**\r\n\r\n';
+    const f = await fixture(locale, { 'Roundtrip.md': original });
+    await f.open('Roundtrip', 'document');
+    await screen.findByRole('textbox', { name: f.copy.body });
+    for (const mode of ['Markdown', f.copy.preview, f.copy.document, 'Markdown']) {
+      fireEvent.click(screen.getByRole('button', { name: mode, exact: true }));
+      if (mode === 'Markdown') expect(f.editor().value).toBe(original.replace(/\r\n/g, '\n'));
+      expect(screen.getByRole('button', { name: f.copy.save }).disabled).toBe(true);
+    }
+    expect(f.disk.get('Roundtrip.md')).toBe(original);
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it(`synchronizes a Markdown edit into the document and saves against the read revision (${locale})`, async () => {
+    const f = await fixture(locale);
+    await f.open('Alpha');
+    const draft = '# 修改后的计划\n\n**已核对**\n\n- 完成归档\n';
+    fireEvent.change(f.editor(), { target: { value: draft } });
+    fireEvent.click(screen.getByRole('button', { name: f.copy.document, exact: true }));
+    const body = await screen.findByRole('textbox', { name: f.copy.body });
+    await within(body).findByRole('heading', { level: 1, name: '修改后的计划' });
+    expect(body.querySelector('strong')?.textContent).toBe('已核对');
+    await f.source();
+    expect(f.editor().value).toBe(draft);
+    fireEvent.click(screen.getByRole('button', { name: f.copy.save }));
+    await waitFor(() => expect(f.disk.get('Alpha.md')).toBe(draft));
+    const saves = f.requests.filter(item => item.command?.action === 'save');
+    expect(saves).toHaveLength(1);
+    expect(saves[0].command.expectedRevision).toBe(revision('# Alpha\n'));
+  });
+
+  it(`opens unsupported wiki syntax in source with the original text retained (${locale})`, async () => {
+    const original = '# 资料引用\n\n查看 [[Alpha]]，保留 ![[演示.png]]。\n';
+    const f = await fixture(locale, { 'Unsupported.md': original });
+    await f.open('Unsupported', 'document');
+    await screen.findByText(f.copy.unavailable);
+    const source = await screen.findByRole('textbox', { name: f.copy.source });
+    expect(source.value).toBe(original);
+    expect(screen.getByRole('button', { name: f.copy.document, exact: true }).disabled).toBe(true);
+    expect(screen.queryByRole('textbox', { name: f.copy.body })).toBeNull();
+    expect(screen.getByRole('button', { name: f.copy.save }).disabled).toBe(true);
+    expect(f.disk.get('Unsupported.md')).toBe(original);
+    expect(f.requests.filter(item => item.command)).toHaveLength(0);
   });
 }

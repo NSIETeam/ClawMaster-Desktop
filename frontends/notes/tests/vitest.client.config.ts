@@ -24,6 +24,6 @@ export default defineConfig({
     environment: 'jsdom',
     pool: 'forks',
     env: { NODE_ENV: 'test' },
-    include: ['frontends/notes/tests/client.spec.mjs'],
+    include: ['frontends/notes/tests/client.spec.mjs', 'frontends/notes/tests/rich-editor.spec.mjs'],
   },
 });

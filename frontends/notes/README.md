@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-ClawMaster includes a local notebook for Markdown editing, previews, wiki links, backlinks, tags and text search. You can ask the agent to record finished work as notes, or to propose an edit and store a reviewable draft without changing the source note; note changes made by the agent require approval. The product creates its own vault without requiring Obsidian. Saved notes remain ordinary files; unsaved drafts remain in memory for the current application session.
+ClawMaster includes a local notebook with formatted document editing, Markdown source, previews, wiki links, backlinks, tags and text search. You can ask the agent to record finished work as notes, or to propose an edit and store a reviewable draft without changing the source note; note changes made by the agent require approval. The product creates its own vault without requiring Obsidian. Saved notes remain ordinary files; unsaved drafts remain in memory for the current application session.
 
 ## Table of Contents
 
@@ -28,9 +28,13 @@ This private component is included in the ClawMaster desktop profile through its
 
 Selecting a note collapses the directory to give the editor the panel's available height. Use **Note list** in the toolbar to show or hide it. On a wide panel the directory opens beside the editor; on a narrow panel it overlays the editor until you choose a note or close it. For more space, use the host sidebar's fullscreen control.
 
+Each fresh panel starts in **Document** mode, where headings and formatting appear directly in the editable text. The toolbar offers paragraphs, headings, quotes, bold, italic, inline code, lists, checklists, links, tables, separators and code blocks. **Markdown** shows the complete source, including YAML frontmatter; **Preview** displays a read-only rendering. Your mode selection persists while navigating, reloading or renaming notes in the same panel.
+
+Opening a note or switching modes without editing retains its original source and does not save it. An actual document edit preserves raw frontmatter and the whitespace around the body, but serializes the body as conventional Markdown. Use source editing when exact body formatting matters. Unsupported constructs, including wiki links outside code, embedded images, raw HTML and leading indented code, keep the original draft in Markdown mode with a notice; they are not automatically converted or saved.
+
 Create or open a note, edit its text and choose **Save**. A revision conflict preserves both your draft and the newer file. **Reload** explicitly asks before discarding that draft. Switching notes or closing and reopening the Notes tab retains drafts for the same Session while the plugin remains loaded. **Delete** requires confirmation and does not use the trash. **Rename** moves the note and retains its local draft, refusing an occupied destination. **Today's note** opens the dated diary note, creating it once.
 
-A wiki link resolves to its note; when several notes match you choose, and when none matches you are offered the note's creation. A `.canvas` file opens read-only with saving and renaming disabled, because this component has no canvas editor.
+A wiki link in **Preview** resolves to its note; when several notes match you choose, and when none matches you are offered the note's creation. Backlinks remain available in **Note details**. A `.canvas` file opens read-only with saving and renaming disabled, because this component has no canvas editor.
 
 **Note details** starts collapsed and opens the tags, backlinks and **Proposals**. The pending proposal count remains visible when the section is collapsed. Expand it to review a proposal's diff, then explicitly choose **Apply** or **Discard**; opening the section does not apply changes. Applying is revision-guarded: if the note moved since the proposal was drafted, the apply is refused and the proposal stays for a retry. Applying also preserves any unsaved local draft, which must be reconciled before saving.
 
@@ -61,7 +65,7 @@ The [proposal store](src/proposals.ts) persists drafts and base revisions as JSO
 
 The [revision scanner](src/watcher.ts) fingerprints note paths, sizes and modification times on request, sharing concurrent scans. The `revision` route combines that fingerprint with a bounded proposal-content digest, so metadata-only changes also refresh the panel. Scan failures reach the request; teardown waits for active scans. No native filesystem watch or background scan is started.
 
-The [panel](src/client.tsx) is styled as host chrome rather than a generic list. [Tree](src/tree.ts) derives folders from note ids so rows nest, with 34px rows, a 6px icon gap and `depth * 22 + 6` inline indentation — the metrics the host's own file-manager explorer uses. [Icons](src/icons.tsx) are inline SVG glyphs on one 16px grid, so the module ships no raster asset.
+The [panel](src/client.tsx) retains one full Markdown draft and its read revision across modes. The [document adapter](src/rich-editor.tsx) separates raw frontmatter and surrounding whitespace from the editable body, ignores initialization normalization, and returns unsupported input to source mode. MDXEditor 4.2.5 is bundled into the minified browser artifact with its MIT license banner; CodeMirror language-support autoloading is disabled. [Tree](src/tree.ts) derives nested folders from note ids using the host explorer's row spacing, and [icons](src/icons.tsx) use inline SVG.
 
 </details>
 
@@ -75,7 +79,7 @@ Note mutations through `notes_write` and `notes_digest` require an owning DSH ag
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
-- Markdown editing supports a subset of formatting; this component does not implement Obsidian plugins or a canvas editor, and a canvas opens read-only. Search scans files rather than a persistent index, and listing reads one head per note for its title.
+- Preview supports a smaller formatting subset than Document mode. Unsupported document constructs remain editable as [Markdown source](#use-this-package). This component does not implement Obsidian plugins or a canvas editor. Search scans files rather than a persistent index, and listing reads one head per note for its title.
 - Live refresh uses polling and may be delayed by failed requests or a hidden tab. The note fingerprint cannot detect edits that preserve both size and modification time.
 - Drafts are not persisted across process exit. The browser receives an unload warning when drafts exist; native application quit protection is not verified.
 - File locks coordinate cooperating writers; they do not isolate hostile or uncooperative processes replacing ancestors or racing the final filesystem operation. Writes do not promise crash durability through `fsync`.

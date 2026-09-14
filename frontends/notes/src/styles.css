@@ -416,7 +416,7 @@
 }
 
 /* Source and rendered views share one reading measure. */
-.cm-notes textarea {
+.cm-notes-editor > textarea {
   box-sizing: border-box;
   flex: 1;
   min-height: 0;
@@ -804,3 +804,122 @@
     margin-left: auto;
   }
 }
+
+.cm-notes-modes {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--cm-line);
+}
+
+.cm-notes-modes button {
+  min-height: 28px;
+  padding: 3px 12px;
+  border: 0;
+  border-radius: var(--cm-radius-sm);
+  background: transparent;
+  color: var(--cm-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cm-notes-modes button[aria-pressed='true'] {
+  background: var(--cm-selected);
+  color: var(--cm-accent);
+}
+
+.cm-notes-modes button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.cm-notes-format-notice {
+  flex: none;
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--cm-ink-2);
+  background: var(--cm-surface);
+  font: var(--cm-font-2);
+}
+
+.cm-notes-rich {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cm-notes-rich > .mdxeditor {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.cm-notes .mdxeditor {
+  --basePageBg: var(--dsw-alias-bg-base, #fff);
+  --baseBase: var(--basePageBg);
+  --baseBgSubtle: var(--cm-surface);
+  --baseBg: var(--cm-surface);
+  --baseBgHover: var(--cm-hover);
+  --baseBgActive: var(--cm-selected);
+  --baseLine: var(--cm-line);
+  --baseBorder: var(--cm-line-2);
+  --baseText: var(--cm-ink-2);
+  --baseTextContrast: var(--cm-ink);
+  --accentBg: var(--cm-selected);
+  --accentBgHover: var(--cm-hover);
+  --accentSolid: var(--cm-accent);
+  --accentText: var(--cm-accent);
+  --accentTextContrast: var(--cm-ink);
+  color: var(--cm-ink);
+}
+
+.cm-notes .mdxeditor-toolbar {
+  flex-wrap: wrap;
+  border-radius: 0;
+  border-bottom: 1px solid var(--cm-line);
+}
+
+.cm-notes .mdxeditor-root-contenteditable {
+  scrollbar-gutter: stable;
+}
+
+.cm-notes .mdxeditor .cm-notes-document-content {
+  box-sizing: border-box;
+  padding: 18px 24px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--cm-ink);
+  overflow-wrap: anywhere;
+}
+
+.cm-notes .mdxeditor h1 { font-size: 1.8em; }
+.cm-notes .mdxeditor h2 { font-size: 1.5em; }
+.cm-notes .mdxeditor h3 { font-size: 1.25em; }
+.cm-notes .mdxeditor h4,
+.cm-notes .mdxeditor h5,
+.cm-notes .mdxeditor h6 { font-size: 1.1em; }
+
+.cm-notes .mdxeditor h1,
+.cm-notes .mdxeditor h2,
+.cm-notes .mdxeditor h3,
+.cm-notes .mdxeditor h4,
+.cm-notes .mdxeditor h5,
+.cm-notes .mdxeditor h6 {
+  margin: 1em 0 .45em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.cm-notes .mdxeditor p { margin: .6em 0; }
+.cm-notes .mdxeditor strong { font-weight: 700; }
+.cm-notes .mdxeditor em { font-style: italic; }
+.cm-notes .mdxeditor ul { list-style-type: disc; padding-left: 1.6em; }
+.cm-notes .mdxeditor ol { list-style-type: decimal; padding-left: 1.6em; }
+.cm-notes .mdxeditor blockquote { margin: .8em 0; padding-left: 1em; border-left: 3px solid var(--cm-line-2); color: var(--cm-ink-2); }
+.cm-notes .mdxeditor a { color: var(--cm-accent); text-decoration: underline; }
+.cm-notes .mdxeditor code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--cm-surface); padding: 2px 4px; border-radius: 4px; }

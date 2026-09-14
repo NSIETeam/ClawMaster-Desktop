@@ -1,6 +1,7 @@
 /** ClawMaster Notes: the built-in Markdown vault as a native sidebar tab. */
 import { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { RichNoteEditor } from './rich-editor.tsx';
 import { NotesApi, NotesApiError } from './notes-api.ts';
 import { inlineTokens, parseMarkdown, type Block } from './markdown.ts';
 import type { NoteEntry, NoteMatch, NoteRead, Proposal, UnifiedDiff } from './protocol.ts';
@@ -8,10 +9,11 @@ import { extractLinks, noteTitle, parseFrontmatter } from './note-format.ts';
 import { notesCopy, type NotesLocale } from './locales.ts';
 import { ancestorsOf, buildTree, flattenTree } from './tree.ts';
 import {
-  BacklinkIcon, CalendarIcon, CanvasIcon, ChevronIcon, EditIcon, FolderIcon, FolderOpenIcon,
-  InfoIcon, NoteIcon, PlusIcon, PreviewIcon, ProposalIcon, RenameIcon, SaveIcon, SearchIcon,
+  BacklinkIcon, CalendarIcon, CanvasIcon, ChevronIcon, FolderIcon, FolderOpenIcon,
+  InfoIcon, NoteIcon, PlusIcon, ProposalIcon, RenameIcon, SaveIcon, SearchIcon,
   TagIcon, TrashIcon,
 } from './icons.tsx';
+import editorStyles from '@mdxeditor/editor/style.css';
 import styles from './styles.css';
 
 export const name = 'clawmaster-notes';
@@ -98,7 +100,8 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
   const [entries, setEntries] = useState<NoteEntry[]>();
   const [open, setOpen] = useState<NoteRead | undefined>(() => drafts.values().next().value?.note);
   const [draft, setDraft] = useState(() => drafts.values().next().value?.text ?? '');
-  const [mode, setMode] = useState<'edit' | 'preview'>('edit');
+  const [mode, setMode] = useState<'document' | 'source' | 'preview'>('document');
+  const [richUnavailable, setRichUnavailable] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const libraryId = useId();
@@ -198,7 +201,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
       setOpen(note);
       setLibraryOpen(false);
       setDraft(retained?.text ?? note.text);
-      setMode('edit');
+      setRichUnavailable(false);
       setStatus({ state: 'idle' });
       setBacklinks([]);
       // A selection made from a link, a search hit or a backlink must be visible in the tree.
@@ -368,6 +371,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
 
   const dirty = open !== undefined && draft !== open.text;
   const isCanvas = open !== undefined && open.id.endsWith('.canvas');
+  const activeMode = richUnavailable && mode === 'document' ? 'source' : mode;
   const blocks = useMemo(() => parseMarkdown(draft), [draft]);
   const tree = useMemo(() => buildTree(entries ?? []), [entries]);
   const rows = useMemo(() => flattenTree(tree, collapsed), [tree, collapsed]);
@@ -465,10 +469,6 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
             onClick={() => { setRenaming(open.id); setRenameDraft(open.id.replace(/\.md$/, '')); }}>
             <RenameIcon size={14} />{copy.rename}
           </button>}
-          <button type="button" className="cm-notes-action" onClick={() => setMode(value => value === 'edit' ? 'preview' : 'edit')}>
-            {mode === 'edit' ? <PreviewIcon size={14} /> : <EditIcon size={14} />}
-            {mode === 'edit' ? copy.preview : copy.edit}
-          </button>
           <button type="button" className="cm-notes-action" disabled={isCanvas || !dirty || status.state === 'saving'} onClick={() => void save()}>
             <SaveIcon size={14} />{copy.save}
           </button>
@@ -477,6 +477,12 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
           </button>
         </div>
       </div>
+      {!isCanvas && <div className="cm-notes-modes" role="group" aria-label={copy.editorMode}>
+        <button type="button" aria-pressed={activeMode === 'document'} disabled={richUnavailable} onClick={() => setMode('document')}>{copy.documentMode}</button>
+        <button type="button" aria-pressed={activeMode === 'source'} onClick={() => setMode('source')}>{copy.markdownMode}</button>
+        <button type="button" aria-pressed={activeMode === 'preview'} onClick={() => setMode('preview')}>{copy.preview}</button>
+      </div>}
+      {richUnavailable && !isCanvas && <p className="cm-notes-format-notice" role="status">{copy.richUnavailable}</p>}
       {confirmation && <div role="alertdialog" aria-label={confirmation === 'delete' ? copy.delete : copy.conflictReload}>
         <p>{confirmation === 'delete' ? copy.deleteConfirm : copy.reloadConfirm}</p>
         <button type="button" onClick={() => setConfirmation(undefined)}>{copy.cancel}</button>
@@ -509,13 +515,22 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
           <pre className="cm-notes-canvas">{draft}</pre>
         </>
         : <>
-          <textarea hidden={mode !== 'edit'} value={draft} readOnly={status.state === 'saving' || status.state === 'loading'} spellCheck={false} aria-label={copy.edit} onChange={event => {
+          <RichNoteEditor key={open.id} documentKey={open.id} markdown={draft}
+            hidden={activeMode !== 'document'} readOnly={status.state === 'saving' || status.state === 'loading' || activeMode !== 'document'}
+            copy={copy} onChange={text => {
+              setDraft(text);
+              if (text === open.text) drafts.delete(open.id);
+              else drafts.set(open.id, { note: open, text });
+            }} onUnavailable={() => setRichUnavailable(true)} />
+          <textarea hidden={activeMode !== 'source'} value={draft} readOnly={status.state === 'saving' || status.state === 'loading'} spellCheck={false} aria-label={copy.markdownSource} onChange={event => {
             const text = event.target.value;
+            setMode('source');
+            setRichUnavailable(false);
             setDraft(text);
             if (text === open.text) drafts.delete(open.id);
             else drafts.set(open.id, { note: open, text });
           }} />
-          {mode === 'preview' && <div className="cm-notes-preview">{blocks.map((block, index) => <BlockView key={index} block={block} onWiki={openWiki} />)}</div>}
+          {activeMode === 'preview' && <div className="cm-notes-preview">{blocks.map((block, index) => <BlockView key={index} block={block} onWiki={openWiki} />)}</div>}
         </>}
       <button type="button" className="cm-notes-details-toggle" aria-label={copy.noteDetails}
         aria-expanded={detailsOpen} aria-controls={detailsId} aria-describedby={proposalCountId} onClick={() => setDetailsOpen(value => !value)}>
@@ -565,7 +580,7 @@ export function apply(ctx: NotesClientServices): void {
   ctx.effect(() => {
     const style = document.createElement('style');
     style.dataset.plugin = name;
-    style.textContent = styles;
+    style.textContent = `${editorStyles.replaceAll(':root', '.mdxeditor').replaceAll('.light, .light-theme', '.mdxeditor.light').replaceAll('.dark, .dark-theme', '.mdxeditor.dark')}\n${styles}`;
     document.head.appendChild(style);
     return () => style.remove();
   }, 'clawmaster: notes styles');
