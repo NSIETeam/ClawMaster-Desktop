@@ -1,6 +1,7 @@
 /** Markdown document editing with MDXEditor's maintained parser, controls and history. */
 import { Component, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MDXEditor, BoldItalicUnderlineToggles, BlockTypeSelect, CodeMirrorEditor, CodeToggle,
   CreateLink, InsertCodeBlock, InsertTable, InsertThematicBreak, ListsToggle, UndoRedo,
@@ -155,7 +156,7 @@ function MountedRichEditor(props: RichNoteEditorProps): ReactNode {
     latest.current.onChange(source);
   }, []);
 
-  return <div className="cm-notes-rich" hidden={props.hidden} ref={setOverlayContainer}>
+  return <><div className="cm-notes-rich" hidden={props.hidden}>
     <EditorFailure onUnavailable={reportUnavailable} source={props.markdown}>
       <MDXEditor ref={editor} markdown={input.body} trim={false}
         className="mdxeditor-full-height" contentEditableClassName="cm-notes-document-content"
@@ -163,7 +164,10 @@ function MountedRichEditor(props: RichNoteEditorProps): ReactNode {
         suppressHtmlProcessing translation={translation} plugins={plugins}
         overlayContainer={overlayContainer} onChange={onChange} onError={reportUnavailable} />
     </EditorFailure>
-  </div>;
+  </div>{createPortal(
+    <div className="cm-notes-rich-overlays" hidden={props.hidden || props.readOnly} ref={setOverlayContainer} />,
+    document.body,
+  )}</>;
 }
 
 /**

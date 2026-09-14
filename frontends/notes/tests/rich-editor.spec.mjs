@@ -137,6 +137,29 @@ it('resets the editor on a different note but retains it while read-only or hidd
   expect(view.props().onChange).not.toHaveBeenCalled();
 });
 
+it('keeps popovers outside the clipped pane, hides them with the editor and removes them on unmount', () => {
+  const view = fixture('# Note\n');
+  const editorNode = view.container.querySelector('[data-editor]');
+  const overlay = harness.props.overlayContainer;
+  expect(overlay.parentElement).toBe(document.body);
+  expect(view.container.contains(overlay)).toBe(false);
+  expect(overlay.hidden).toBe(false);
+  const popup = document.createElement('button');
+  popup.textContent = 'Synthetic upstream popup';
+  overlay.append(popup);
+  for (const changes of [{ hidden: true }, { hidden: false, readOnly: true }, { readOnly: false }]) {
+    view.update(changes);
+    expect(harness.props.overlayContainer).toBe(overlay);
+    expect(overlay.hidden).toBe(view.props().hidden || view.props().readOnly);
+    expect(view.container.querySelector('[data-editor]')).toBe(editorNode);
+    expect(overlay.contains(popup)).toBe(true);
+  }
+  expect(harness.instances).toHaveLength(1);
+  view.unmount();
+  expect(overlay.isConnected).toBe(false);
+  expect(popup.isConnected).toBe(false);
+});
+
 it('reports unsupported imports once and never exports partially parsed content', async () => {
   const original = '# Before\n\n[[Linked note]]\n';
   const view = fixture(original);

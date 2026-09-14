@@ -1,5 +1,6 @@
 /* Notes use host theme tokens and keep navigation outside the writing area. */
-.cm-notes {
+.cm-notes,
+.cm-notes-rich-overlays {
   --cm-row-height: 34px;
   --cm-row-gap: 6px;
   --cm-row-padding: 8px;
@@ -25,7 +26,12 @@
   --cm-selected: var(--dsw-alias-state-business-tertiary, rgba(37, 99, 235, .12));
   --cm-accent: var(--dsw-alias-brand-primary, var(--dsw-alias-state-business-primary, #2563eb));
   --cm-guide: var(--dsw-alias-border-l2, rgba(0, 0, 0, .12));
+}
+
+.cm-notes {
   container-type: inline-size;
+  /* MDXEditor's fixed anchors use the query container's coordinates. */
+  contain: layout;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -858,7 +864,18 @@
   min-width: 0;
 }
 
-.cm-notes .mdxeditor {
+.cm-notes-rich-overlays {
+  position: relative;
+  /* Match the host's menus; global modal dialogs occupy the higher 1000 layer. */
+  z-index: 100;
+}
+
+.cm-notes-rich-overlays[hidden] {
+  display: none;
+}
+
+.cm-notes .mdxeditor,
+.cm-notes-rich-overlays .mdxeditor-popup-container {
   --basePageBg: var(--dsw-alias-bg-base, #fff);
   --baseBase: var(--basePageBg);
   --baseBgSubtle: var(--cm-surface);
@@ -867,11 +884,21 @@
   --baseBgActive: var(--cm-selected);
   --baseLine: var(--cm-line);
   --baseBorder: var(--cm-line-2);
+  --baseBorderHover: var(--cm-line-2);
+  --baseSolid: var(--cm-ink-3);
+  --baseSolidHover: var(--cm-ink-2);
   --baseText: var(--cm-ink-2);
   --baseTextContrast: var(--cm-ink);
+  --accentBase: var(--basePageBg);
+  --accentBgSubtle: var(--cm-selected);
   --accentBg: var(--cm-selected);
   --accentBgHover: var(--cm-hover);
+  --accentBgActive: var(--cm-selected);
+  --accentLine: var(--cm-line-2);
+  --accentBorder: var(--cm-accent);
+  --accentBorderHover: var(--cm-accent);
   --accentSolid: var(--cm-accent);
+  --accentSolidHover: var(--cm-accent);
   --accentText: var(--cm-accent);
   --accentTextContrast: var(--cm-ink);
   color: var(--cm-ink);

@@ -516,7 +516,7 @@ function NotesPanel({ ctx, drafts, visible }: { ctx: NotesClientServices; drafts
         </>
         : <>
           <RichNoteEditor key={open.id} documentKey={open.id} markdown={draft}
-            hidden={activeMode !== 'document'} readOnly={status.state === 'saving' || status.state === 'loading' || activeMode !== 'document'}
+            hidden={!visible || activeMode !== 'document'} readOnly={status.state === 'saving' || status.state === 'loading' || !visible || activeMode !== 'document'}
             copy={copy} onChange={text => {
               setDraft(text);
               if (text === open.text) drafts.delete(open.id);
