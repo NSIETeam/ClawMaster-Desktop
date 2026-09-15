@@ -8,6 +8,7 @@ Desktop package version: **0.2.2**. `build:harness` selects the ClawMaster clien
 
 The Tauri package is `@deepseek-ai/dsh-desktop-tauri`, independent of upstream Electron. The Host launch URL passes only in memory to a separate WebView, where upstream authentication issues the login cookie. Application commands belong to the local shell; loopback Host content receives only window dragging and double-click maximization permissions. Boot logs omit the launch token. The trimmed bundle includes `native/system` and permits unused development-tool patches only in that tree; patch application failures still stop installation.
 
+<a id="architecture"></a>
 ## Architecture
 
 | Layer | What ships | First run |
@@ -46,6 +47,7 @@ The fixed [Better Sidebar patch](patches/dsh-better-sidebar@0.19.1.patch) retain
 
 The [Office component](../../frontends/office/README.md) supplies local ONLYOFFICE viewers for basic DOCX, XLSX, and PPTX editing and saving through the existing sidebar. A conflicting save preserves changed disk content. Complex layouts, macros, encrypted files, and legacy formats remain outside acceptance. The viewer retains legal notices and corresponding-source access; its README owns file limits, runtime preparation, and licensing.
 
+<a id="im-workspaces-and-bundled-packages"></a>
 ### IM workspaces and bundled packages
 
 Desktop preparation creates the persistent directory `$DSH_HOME/watchdog-workspaces/im` without registering a default DSH Workspace. The [desktop policy](defaults/cordis.patch.yml) supplies that directory through `config.weixin.workspace`, `config.feishu.workspace`, `config.dingtalk.workspace` and `config.wecom.workspace` on `xmanrui-dsh-im`. The plugin registers the Workspace when a conversation needs it. Existing bots retain their saved workspace; change it through Settings → IM Bots → the bot's Workspace selector. The selector clears that bot's chat bindings and preserves old Sessions and files; subsequent messages use the selected workspace. This fixed directory does not allocate a new task directory per message.
@@ -116,6 +118,7 @@ First launch scans the process `PATH` (on Windows, plus the durable user and mac
 
 Cleanup reads `storages/workspace.json` from the selected DSH home. A runtime directory is retained when it equals, contains, or lies inside a registered Workspace path; resolved filesystem aliases receive the same protection. A missing registry permits a new installation. An existing unreadable registry, unsupported unit version, or invalid path stops automatic cleanup with a diagnostic that omits stored values. Dependency repair and source reseeding refuse to replace a protected or uncertain directory, preserving its files and runtime manifest for manual recovery.
 
+<a id="build"></a>
 ## Build
 
 The [native RPA preparer](scripts/prepare-rpa-native.mjs) builds the pinned Rust source for the current platform, or an explicit `--target`, and places the executable under `frontends/rpa/dist/native/<platform>-<arch>/`. Packaging rejects missing helpers, wrong executable headers, architecture mismatches, stale component versions and changed SHA-256 digests. Each release matrix target runs `--native-tool capabilities` on its distributed helper without reading desktop content; the production Host check verifies that `wechat_read` and the updater tools are registered. The [RPA component](../../frontends/rpa/README.md) owns approval and platform support.
@@ -136,6 +139,7 @@ Installer output: `src-tauri/target/release/bundle/nsis/ClawMaster_0.2.2_x64-set
 
 The NSIS installer bundles **English**, **Simplified Chinese**, and **Traditional Chinese**. Language follows the OS locale automatically (no language picker); if the locale is unsupported, English is used. Native splash, tray, close-dialog, and splash-status copy follow the same rule (`zh*` → Chinese, otherwise English). The embedded `dsh web` client keeps its own Settings language. Before copying files, the installer silently closes `dsh-desktop.exe` and its child process tree. After installation, it recreates an existing desktop shortcut with the versioned standalone ICO resource and notifies Explorer to invalidate stale icon cache entries.
 
+<a id="release"></a>
 ## Release
 
 Pushing a `desktop-v*` tag runs [the desktop release workflow](../../.github/workflows/desktop-release.yml). It builds Windows x64 NSIS installers, macOS Apple Silicon DMGs, and Linux x64 AppImage/deb packages, then publishes after every matrix job succeeds. Program version `0.2.2` publishes as the stable release `desktop-v0.2.2`; prerelease program versions stay outside GitHub Latest. Existing stable releases cannot be overwritten. Manual dispatch defaults to build-only: it builds the selected branch commit and uploads signed installers without publishing a release or changing the update channel. Set `publish` only when rebuilding an existing release tag for publication. Each updater artifact carries a Tauri signature; the versioned release includes `latest.json`, `clawmaster-release-signing.pub`, and `SHA256SUMS.txt`. The manifest maps DEB installations to a separately signed DEB and retains AppImage for the generic Linux target. The [release-channel decision](../../.agents/notes/implemented/architecture/2026-09-13-desktop-stable-confirmed-updates.md) owns version and update-consent rules.
@@ -202,3 +206,7 @@ The native Host writes `$DSH_HOME/desktop/current-runtime.json` after readiness 
 Startup regression: copy the trimmed bundle to a temporary directory, install production dependencies there, set DSH_DESKTOP_SMOKE_ROOT to that directory, and run pnpm run test:startup. With a private home, it checks desktop plugin defaults, authentication, cross-origin write rejection, empty CRM/ERP data, lazy Workspace creation, and a CRM record retained after a Host restart on another port. It calls no model API.
 
 Package compatibility: run `pnpm run build:harness`, `pnpm run prepare:dist`, then `pnpm run test:compat` from this directory. The compatibility runner requires the current prepared source and payload digests, copies the verified bundle to a private temporary directory, and installs locked dependencies there without lifecycle scripts. It downloads the pinned official OpenViking and Sidebar archives and checks their recorded hashes before extraction. Plugin installation, routing, OpenViking Session compatibility and Office save-conflict tests run with explicit artifact locations. A stale build or changed archive fails; live OpenViking capture/retrieval, IM delivery and native platform acceptance remain separate evidence. Network access, pnpm and tar are required.
+
+## Development planning
+
+The proposed [ClawMaster 0.2.3 delivery plan](../../.agents/notes/proposed/process/2026-09-15-clawmaster-0.2.3-delivery-plan.md) owns the next iteration's work packages, dependencies, recovery requirements and acceptance cases. Unchecked work is not shipped behavior; this README remains the reference for the installed desktop.

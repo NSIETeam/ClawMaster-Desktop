@@ -206,3 +206,7 @@ pnpm run dev
 启动回归：先复制裁剪包到临时目录并安装生产依赖，将 DSH_DESKTOP_SMOKE_ROOT 指向该目录，再运行 pnpm run test:startup；它使用独立主目录验证桌面默认插件、认证、跨源写入拒绝、CRM/ERP 空数据、Workspace 按需创建，以及 Host 换端口重启后保留 CRM 记录，不调用模型 API。
 
 包兼容性：在本目录依次运行 `pnpm run build:harness`、`pnpm run prepare:dist` 和 `pnpm run test:compat`。兼容性运行器要求准备好的源码与载荷摘要对应当前版本，将已验证的包复制到私有临时目录，并在那里安装锁定依赖，不执行生命周期脚本。它下载固定版本的官方 OpenViking 和 Sidebar 压缩包，并在解包前检查已登记哈希。插件安装、路由、OpenViking 会话兼容性和 Office 保存冲突测试使用明确的产物位置。陈旧构建或压缩包变化会导致失败；真实 OpenViking 捕获与检索、IM 送达及原生平台验收仍需独立证据。运行需要网络、pnpm 和 tar。
+
+## 开发规划
+
+拟议的 [ClawMaster 0.2.3 交付规划](../../.agents/notes/proposed/process/2026-09-15-clawmaster-0.2.3-delivery-plan.zh.md)负责下一轮工作包、依赖、恢复要求和验收用例。未勾选工作不是已交付行为；本 README 继续负责已安装桌面的使用说明。
