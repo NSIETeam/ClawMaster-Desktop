@@ -135,6 +135,8 @@ The NSIS installer bundles **English**, **Simplified Chinese**, and **Traditiona
 
 ## Release
 
+The release matrix includes Windows x64, macOS Apple Silicon, and Linux x64. ClawMaster no longer publishes an Intel Mac installer; Intel Mac users must keep their existing version or migrate to a supported platform.
+
 Pushing a `desktop-v*` tag runs [the desktop release workflow](../../.github/workflows/desktop-release.yml). It builds Windows x64 NSIS installers, macOS Intel/Apple Silicon DMGs, and Linux x64 AppImage/deb packages, then publishes one prerelease after every matrix job succeeds. Each updater artifact carries a Tauri signature; the versioned release includes `latest.json`, `clawmaster-release-signing.pub`, and `SHA256SUMS.txt`. The workflow uses ad-hoc macOS application signing and verifies the resulting bundle, without Apple notarization or Windows publisher signing. A manual dispatch rebuilds an existing matching tag. The default application includes the release public key but leaves `plugins.updater.endpoints` empty, so it sends no update requests and these prereleases do not automatically replace installed applications. Release owners must configure a ClawMaster-controlled HTTPS manifest matching that key to enable updates; nonempty endpoints without a public key return an error.
 
 Release assets belong to the public [ClawMaster-Desktop repository](https://github.com/NSIETeam/ClawMaster-Desktop/releases) and include the operating system and architecture in their names. Tauri updater signatures authenticate downloaded artifacts with the configured updater key. macOS ad-hoc signing checks bundle integrity without certifying a developer identity; it does not include Apple notarization. Windows packages have no publisher certificate.

@@ -38,11 +38,6 @@ jobs:
             bundles: nsis
             asset_platform: windows
             asset_arch: x64
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-            bundles: app,dmg
-            asset_platform: macos
-            asset_arch: x64
           - runner: macos-15
             target: aarch64-apple-darwin
             bundles: app,dmg
@@ -259,9 +254,6 @@ jobs:
           $expected = @(
             '*-windows-x64-setup.exe',
             '*-windows-x64-setup.exe.sig',
-            '*-macos-x64.dmg',
-            '*-macos-x64.app.tar.gz',
-            '*-macos-x64.app.tar.gz.sig',
             '*-macos-arm64.dmg',
             '*-macos-arm64.app.tar.gz',
             '*-macos-arm64.app.tar.gz.sig',
@@ -269,7 +261,6 @@ jobs:
             '*-linux-x64.AppImage.sig',
             '*-linux-x64.deb',
             '*-windows-x64-build.json',
-            '*-macos-x64-build.json',
             '*-macos-arm64-build.json',
             '*-linux-x64-build.json'
           )

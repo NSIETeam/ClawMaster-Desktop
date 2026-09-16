@@ -139,6 +139,8 @@ NSIS 安装包包含**英语**、**简体中文**和**繁体中文**。安装语
 <a id="release"></a>
 ## 发布
 
+当前发行矩阵仅包含 Windows x64、macOS Apple Silicon 和 Linux x64；ClawMaster 不再发布 Intel Mac 安装包。Intel Mac 用户需要保留现有版本或迁移到受支持平台。
+
 推送 `desktop-v*` 标签会运行[桌面发布工作流](../../.github/workflows/desktop-release.yml)。它构建 Windows x64 NSIS 安装包、macOS Intel/Apple Silicon DMG 和 Linux x64 AppImage/deb，并在所有矩阵任务成功后发布一个预发布版本。每个更新产物携带 Tauri 签名；版本附件包含 `latest.json`、`clawmaster-release-signing.pub` 与 `SHA256SUMS.txt`。工作流对 macOS 应用使用临时签名并验证完整安装包，不包含 Apple 公证或 Windows 发布者签名。手动触发可重新构建版本匹配的已有标签。默认应用包含发布验签公钥，但 `plugins.updater.endpoints` 为空，因此不发送更新请求，这些预发布版也不会自动替换已安装应用。发行维护者须配置 ClawMaster 控制且与该公钥匹配的 HTTPS manifest 才能启用更新；端点非空但缺少公钥时返回错误。
 
 Release 资产归公开的 [ClawMaster-Desktop 仓库](https://github.com/NSIETeam/ClawMaster-Desktop/releases)所有，名称包含操作系统与架构。Tauri 更新签名通过配置的更新公钥验证下载产物。macOS 临时签名检查应用完整性，不认证开发者身份，也不包含 Apple 公证。Windows 安装包没有发布者证书。
