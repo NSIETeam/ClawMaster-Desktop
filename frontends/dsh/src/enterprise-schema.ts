@@ -1,7 +1,7 @@
 /** Browser-safe validation shared by HTTP clients and SQLite record readers. */
 import { z } from 'zod';
 import { enterpriseId, EnterpriseError } from './enterprise-types.ts';
-import type { EnterpriseCommandRequest, EnterpriseSnapshot, OrderInput } from './enterprise-types.ts';
+import type { EnterpriseBackup, EnterpriseCommandRequest, EnterpriseSnapshot, OrderInput } from './enterprise-types.ts';
 
 const identifier = z.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/).transform(enterpriseId);
 const shortText = z.string().trim().max(200);
@@ -39,7 +39,8 @@ const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('order.remove'), id: identifier }).strict(),
   z.object({ type: z.literal('order.submit'), id: identifier }).strict(),
 ]);
-const requestSchema = z.object({ revision: integer, commandId: identifier, command: commandSchema }).strict();
+// Legacy requests belong only to the initial, never-restored database generation.
+const requestSchema = z.object({ generation: integer.default(0), revision: integer, commandId: identifier, command: commandSchema }).strict();
 
 /** Stored contact JSON, including its modification time. */
 export const contactSchema = contactInput.extend({ updatedAt: timestamp });
@@ -71,7 +72,7 @@ export const auditSchema = z.discriminatedUnion('type', [
   return (entry.before === null || entry.before.id === entry.entityId) && (entry.after === null || entry.after.id === entry.entityId);
 });
 const snapshotSchema = z.object({
-  revision: integer, contacts: z.array(contactSchema), inventory: z.array(itemSchema),
+  generation: integer.default(0), revision: integer, contacts: z.array(contactSchema), inventory: z.array(itemSchema),
   orders: z.array(orderSchema), audit: z.array(auditSchema),
 }).strict().refine(snapshot => {
   const unique = (values: readonly string[]) => new Set(values).size === values.length;
@@ -82,6 +83,45 @@ const snapshotSchema = z.object({
     && snapshot.orders.every(order => order.lines.every(line => itemIds.has(line.itemId)))
     && snapshot.audit.length === snapshot.revision
     && snapshot.audit.every((entry, index) => entry.revision === snapshot.revision - index);
+});
+const backupSchema = z.object({
+  schemaVersion: z.literal(1), exportedAt: timestamp, snapshot: snapshotSchema,
+  auditCommands: z.array(z.object({ revision: integer.min(1), commandId: identifier, commandJson: z.string().min(2) }).strict()),
+}).strict().superRefine((backup, context) => {
+  if (backup.auditCommands.length !== backup.snapshot.audit.length) {
+    context.addIssue({ code: 'custom', message: 'Backup command receipts do not cover the complete audit history.' });
+    return;
+  }
+  const byRevision = new Map(backup.auditCommands.map(entry => [entry.revision, entry]));
+  for (const entry of backup.snapshot.audit) {
+    const receipt = byRevision.get(entry.revision);
+    if (!receipt || receipt.commandId !== entry.commandId) {
+      context.addIssue({ code: 'custom', message: 'Backup command receipt does not match its audit entry.' });
+      return;
+    }
+    try {
+      const command = commandSchema.parse(JSON.parse(receipt.commandJson));
+      let expected: unknown;
+      switch (entry.type) {
+        case 'contact.upsert': {
+          const { updatedAt: _updatedAt, ...contact } = entry.after;
+          expected = { type: entry.type, contact }; break;
+        }
+        case 'item.upsert': {
+          const { updatedAt: _updatedAt, ...item } = entry.after;
+          expected = { type: entry.type, item }; break;
+        }
+        case 'order.save': {
+          const { updatedAt: _updatedAt, submittedAt: _submittedAt, status: _status, totalMinorUnits: _total, ...order } = entry.after;
+          expected = { type: entry.type, order }; break;
+        }
+        default: expected = { type: entry.type, id: entry.entityId };
+      }
+      if (JSON.stringify(command) !== JSON.stringify(commandSchema.parse(expected))) {
+        context.addIssue({ code: 'custom', message: 'Backup command content differs from its audit record.' }); return;
+      }
+    } catch { context.addIssue({ code: 'custom', message: 'Backup command JSON is invalid.' }); return; }
+  }
 });
 
 /**
@@ -103,6 +143,20 @@ export function parseEnterpriseRequest(value: unknown): EnterpriseCommandRequest
 export function parseEnterpriseSnapshot(value: unknown): EnterpriseSnapshot {
   const result = snapshotSchema.safeParse(value);
   if (!result.success) throw new EnterpriseError('storage_invalid', 'Enterprise snapshot fields are invalid.');
+  return result.data;
+}
+
+/** Validate a complete restore-capable backup envelope. */
+export function parseEnterpriseBackup(value: unknown): EnterpriseBackup {
+  const result = backupSchema.safeParse(value);
+  if (!result.success) throw new EnterpriseError('storage_invalid', 'Enterprise backup fields are invalid.');
+  return result.data;
+}
+
+/** Validate the explicit restore request envelope before opening SQLite. */
+export function parseEnterpriseRestoreRequest(value: unknown): { expectedGeneration: number; expectedRevision: number; confirm: true; backup: EnterpriseBackup; commandId?: string } {
+  const result = z.object({ expectedGeneration: integer.default(0), expectedRevision: integer, confirm: z.literal(true), backup: backupSchema, commandId: identifier.optional() }).strict().safeParse(value);
+  if (!result.success) throw new EnterpriseError('invalid_request', 'Enterprise restore confirmation is invalid.');
   return result.data;
 }
 
