@@ -125,5 +125,9 @@ export interface EnterpriseErrorResponse {
 
 /** Authenticated DSH Fetch routes owned by this module. */
 export const ENTERPRISE_SNAPSHOT_PATH = '/api/clawmaster/enterprise';
+/** Authenticated route for a complete enterprise backup envelope. */
+export const ENTERPRISE_BACKUP_PATH = '/api/clawmaster/enterprise/backup';
+/** Authenticated route for an explicitly confirmed enterprise restore. */
+export const ENTERPRISE_RESTORE_PATH = '/api/clawmaster/enterprise/restore';
 /** Authenticated command route; successful responses contain the committed snapshot. */
 export const ENTERPRISE_COMMAND_PATH = '/api/clawmaster/enterprise/command';
