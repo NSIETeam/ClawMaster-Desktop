@@ -20,8 +20,9 @@ concurrency:
 
 jobs:
 
-  # Three enterprise jobs isolate coverage, static analysis, and the
-  # build-backed consumer tail. The consumer job owns the only Linux build so
+  # Three jobs isolate coverage, static analysis, and the build-backed
+  # consumer tail. DSH uses enterprise pools; ClawMaster uses standard hosted
+  # runners. The consumer job owns the only Linux build so
   # all three jobs enter runner allocation independently.
   #
   # FAILOVER (Linux): each Linux enterprise job resolves its pool through the
@@ -46,7 +47,8 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-ubuntu-24-04-16core'
+          || 'ubuntu-24.04' }}
     name: node 24 / static
     env:
       DSH_GATE_CONCURRENCY: '8'
@@ -113,14 +115,15 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-ubuntu-24-04-16core'
+          || 'ubuntu-24.04' }}
     name: node 24 / coverage
     env:
       # Partitioning replaces the instrumented share; this budget gives the
       # exempt-heavy gate two workers on both hosted and failover runners.
-      DSH_COVERAGE_MAX_WORKERS: '6'
-      DSH_COVERAGE_PARTITIONS: '4'
-      DSH_GATE_CONCURRENCY: '3'
+      DSH_COVERAGE_MAX_WORKERS: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '6' }}
+      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '4' }}
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '1' || '3' }}
       # Managed-scope teardown cases run past the default per-test budget when
       # this lane's partitions, workers, and sibling gates share one host: the
       # disposal cases in subprocess-local and bash-sandbox exceeded 5000ms on
@@ -243,20 +246,22 @@ jobs:
           || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "linux", "x64", "vm-backup"]')
-          || 'dsh-ubuntu-24-04-16core' }}
+          || github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-ubuntu-24-04-16core'
+          || 'ubuntu-24.04' }}
     name: node 24 / snapshots and artifacts
     env:
-      DSH_GATE_CONCURRENCY: '10'
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '10' }}
       DSH_NODE_COMPAT_SKIP_TYPECHECK: '1'
-      DSH_OXLINT_THREADS: '8'
-      DSH_PUBLINT_CONCURRENCY: '8'
-      DSH_WEB_SNAPSHOT_WORKERS: '6'
+      DSH_OXLINT_THREADS: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '8' }}
+      DSH_PUBLINT_CONCURRENCY: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '8' }}
+      DSH_WEB_SNAPSHOT_WORKERS: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '6' }}
+      DSH_EXPECTED_MAX_WORKERS: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '5' }}
       # A failing gate aborts its running siblings: a failing build stops the
       # independent Node compatibility smoke, and a failing reader (e.g.
       # publint) stops the remaining artifact consumers.
       DSH_GATE_FAIL_FAST: '1'
       # Failover halves snapshot concurrency for the shared 64-core VM.
-      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
+      DSH_SNAPSHOT_MAX_CONCURRENCY: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '4' || vars.DSH_CI_FAILOVER_LINUX == 'selfhosted' && github.event.pull_request.user.login != 'dependabot[bot]' && '12' || '32' }}
     steps:
       # Runner cleanup owns tool caches and fixtures, including cancelled runs.
       - name: Use runner-owned temporary storage
@@ -324,6 +329,12 @@ jobs:
           wait "$sandbox_pid" || sandbox_status=$?
           if (( install_status != 0 )); then exit "$install_status"; fi
           exit "$sandbox_status"
+
+      - name: Install ClawMaster frontend lint dependencies
+        if: github.repository == 'NSIETeam/ClawMaster-Desktop'
+        run: |
+          npm ci --prefix frontends/dsh --ignore-scripts
+          npm ci --prefix frontends/office --ignore-scripts
 
       - name: Install Playwright Chromium and hosted dependencies
         if: vars.DSH_CI_FAILOVER_LINUX != 'selfhosted' || github.event.pull_request.user.login == 'dependabot[bot]'
@@ -456,6 +467,7 @@ jobs:
     with:
       targets: node24-linux-x64,node24-win-x64
       ci: true
+      real_api: ${{ github.repository == 'deepseek-harness/deepseek-harness' }}
     secrets:
       DEEPSEEK_API_KEY_EXTERNAL: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
 
@@ -472,7 +484,8 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-windows-2025-16core'
+          || 'windows-2025' }}
     name: windows node 24 / build
     timeout-minutes: 60
     env:
@@ -517,14 +530,15 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-windows-2025-16core'
+          || 'windows-2025' }}
     name: windows node 24 / coverage
     timeout-minutes: 120
     env:
-      DSH_COVERAGE_MAX_WORKERS: '6'
-      DSH_COVERAGE_PARTITIONS: '4'
+      DSH_COVERAGE_MAX_WORKERS: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '6' }}
+      DSH_COVERAGE_PARTITIONS: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '2' || '4' }}
       DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
-      DSH_GATE_CONCURRENCY: '3'
+      DSH_GATE_CONCURRENCY: ${{ github.repository == 'NSIETeam/ClawMaster-Desktop' && '1' || '3' }}
       # A gate failure aborts the sibling gate instead of waiting out its
       # multi-minute instrumented run.
       DSH_GATE_FAIL_FAST: '1'
@@ -594,7 +608,8 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-windows-2025-16core'
+          || 'windows-2025' }}
     name: windows node 24 / native tests
     timeout-minutes: 60
     steps:
@@ -644,7 +659,8 @@ jobs:
           || vars.DSH_CI_FAILOVER_WINDOWS == 'selfhosted'
           && github.event.pull_request.user.login != 'dependabot[bot]'
           && fromJSON('["self-hosted", "dsh-win-ci", "windows"]')
-          || 'dsh-windows-2025-16core' }}
+          || github.repository == 'deepseek-harness/deepseek-harness' && 'dsh-windows-2025-16core'
+          || 'windows-2025' }}
     name: windows node 24 / observational
     timeout-minutes: 60
     env:

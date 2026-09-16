@@ -26,6 +26,11 @@ on:
         type: boolean
         required: false
         default: false
+      real_api:
+        description: Require authenticated installed-wheel tests after the keyless checks.
+        type: boolean
+        required: false
+        default: true
     secrets:
       DEEPSEEK_API_KEY_EXTERNAL:
         description: Real DeepSeek API key for trusted installed-wheel pull-request tests.
@@ -364,6 +369,7 @@ jobs:
       - name: Preflight installed-wheel real API test (POSIX)
         if: >-
           inputs.ci
+          && inputs.real_api
           && runner.os != 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork
@@ -380,6 +386,7 @@ jobs:
       - name: Preflight installed-wheel real API test (Windows)
         if: >-
           inputs.ci
+          && inputs.real_api
           && runner.os == 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork
@@ -395,6 +402,7 @@ jobs:
       - name: Run installed-wheel real API black-box test (POSIX)
         if: >-
           inputs.ci
+          && inputs.real_api
           && runner.os != 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork
@@ -415,6 +423,7 @@ jobs:
       - name: Run installed-wheel real API black-box test (Windows)
         if: >-
           inputs.ci
+          && inputs.real_api
           && runner.os == 'Windows'
           && (github.event_name != 'pull_request'
               || !(github.event.pull_request.head.repo.fork
