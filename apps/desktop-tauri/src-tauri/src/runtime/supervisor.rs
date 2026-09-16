@@ -100,6 +100,7 @@ pub async fn spawn_web_host(
     }
 
     reclaim_stale_host(&host_pid_path());
+    super::component_maintenance::before_host_start(paths).await?;
     let port = pick_port(DEFAULT_WEB_PORT)?;
     let web_url = format!("http://127.0.0.1:{port}/");
     let mut disabled_plugins: Vec<String> = Vec::new();

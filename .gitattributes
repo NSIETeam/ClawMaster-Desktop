@@ -21,3 +21,6 @@ apps/desktop-tauri/patches/@openviking__dsh-memory-plugin@0.3.0.patch whitespace
 frontends/office/patches/onlyoffice-x2t.patch whitespace=-blank-at-eol
 frontends/office/LICENSE whitespace=-blank-at-eol
 frontends/office/vendor/onlyoffice-web-local/LICENSE whitespace=-blank-at-eol
+
+# The generated maintenance bundle preserves Zod code-generation template literals.
+frontends/updates/dist/maintenance.mjs whitespace=-blank-at-eol
