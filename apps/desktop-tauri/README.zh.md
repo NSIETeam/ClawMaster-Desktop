@@ -6,7 +6,9 @@
 
 桌面包版本：**0.2.0-beta.6**。`build:harness` 选择 ClawMaster 客户端 profile，在插件加载前设置浏览器标题，并把已有产品图标写入构建后的 favicon 与 PWA manifest。构建记录最终客户端摘要；打包拒绝标题、profile、manifest 名称、图标或摘要不符的产物。上游 Web 资源源码保留默认品牌。
 
-Tauri 包名为 `@deepseek-ai/dsh-desktop-tauri`，与上游 Electron 应用独立。Host 启动地址只在内存中传给独立 WebView，由上游认证流程签发登录 cookie。应用命令归本地外壳所有；回环 Host 内容仅获得窗口拖动与双击最大化权限。启动日志不记录认证令牌。裁剪包包含 `native/system`，并仅在裁剪树中允许开发工具补丁未使用；实际补丁应用失败仍会阻止安装。
+Tauri 包名为 `@deepseek-ai/dsh-desktop-tauri`，与上游 Electron 应用独立。Host 启动地址只在内存中传给独立 WebView，由上游认证流程签发登录 cookie。原生 capability 只匹配包内 `main` 与 `splash` WebView；独立 Host 内容及其文档 frame 不获得原生命令。Host 导航限定到包含端口的精确回环来源，且不能打开额外原生窗口。启动日志不记录认证令牌。裁剪包包含 `native/system`，并仅在裁剪树中允许开发工具补丁未使用；实际补丁应用失败仍会阻止安装。
+
+包内外壳的 CSP 允许自身脚本与图片、Tauri IPC，以及进度更新所需的内联样式。Tauri 为包内内联脚本生成哈希；内容脚本求值、远程资源、frame、对象嵌入、表单提交与基地址覆盖均被拒绝。该策略作用于包内外壳资源；独立 Host WebView 拥有其网页资源。[桌面隔离](../../.agents/notes/implemented/architecture/2026-09-16-clawmaster-native-privilege-isolation.zh.md)定义可信插件限制及验证范围。
 
 <a id="architecture"></a>
 ## 架构
@@ -147,7 +149,7 @@ Release 资产归公开的 [ClawMaster-Desktop 仓库](https://github.com/NSIETe
 
 透明背景的[浅色 SVG](../../frontends/dsh/src/clawmaster.svg)与[深色 SVG](../../frontends/dsh/src/clawmaster-dark.svg)使用同一轮廓，分别以黑色和白色绘制。应用内图标跟随 Web 主题的最终明暗状态，启动页跟随系统外观。Web favicon 保留浅色 SVG 的精确字节。桌面准备过程通过[图标生成脚本](scripts/generate-icons.mjs)从浅色矢量源生成各原生图标格式；ICNS 条目按类型排序，并保留其中的编码图像。桌面品牌检查拒绝 SVG 内嵌或链接的图片。[原始 PNG](../../frontends/dsh/src/clawmaster.png)保留为视觉参考。macOS 隐藏原生标题文字；外壳不绘制独立顶栏。Windows 安装还携带文件名含版本的 ICO 文件，避免快捷方式图标查询复用旧的可执行文件路径缓存键。
 
-[构建溯源](scripts/build-provenance.mjs)将完整 harness 构建和产品准备过程绑定到完整 Git 提交、已提交树、工作区源码 SHA-256 与相对路径脏文件清单。准备过程拒绝编译后的源码改动或被替换的 Host、客户端与前端产物。默认 `development` 模式生成明确的开发构建编号，源码有改动时包含 `dirty`。`DSH_DESKTOP_BUILD_MODE=release` 要求整个工作流使用干净源码和发布模式记录。生成的原生图标属于受验证的构建输出，不作为源码输入；平台编码器可能在 SVG 不变时改变输出字节。源码变化后，须重新完整执行 `build:harness`，再执行 `prepare:dist`。
+[构建溯源](scripts/build-provenance.mjs)将完整 harness 构建和产品准备过程绑定到完整 Git 提交、已提交树、工作区源码 SHA-256 与相对路径脏文件清单。[清单](scripts/build-inventory.mjs)记录组件名称、版本、manifest 与产出文件摘要、依赖锁文件摘要，以及本地补丁及其完整性记录摘要。准备过程拒绝编译后的源码改动或被替换的 Host、客户端与前端产物。默认 `development` 模式生成明确的开发构建编号，源码有改动时包含 `dirty`。`DSH_DESKTOP_BUILD_MODE=release` 要求整个工作流使用干净源码和发布模式记录；发布工作流还将 `DSH_DESKTOP_RELEASE_COMMIT` 设为选定的完整提交，并拒绝不同的检出。生成的原生图标属于受验证的构建输出，不作为源码输入；平台编码器可能在 SVG 不变时改变输出字节。源码变化后，须重新完整执行 `build:harness`，再执行 `prepare:dist`。
 
 资源包的 `.bundle-manifest.json` 包含 `desktopVersion` 与 `buildProvenance`，同内容的 `.build-provenance.json` 参与 `contentSha256`。安装包携带这些记录，不携带 `.git`。每个平台的 `*-build.json` 发布附件标识其源码与产物，发布流程核对其提交、树、版本及干净发布模式与标签一致。溯源检查纳入 `test:bundle`。
 

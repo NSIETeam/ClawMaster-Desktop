@@ -30,6 +30,16 @@ export interface ContextInjectionRowProps {
  */
 export function ContextInjectionRow({ content, source, provenance, form, t }: ContextInjectionRowProps) {
   const [open, setOpen] = useState(false)
+  const plugin = typeof source === 'object' && source !== null && 'kind' in source && source.kind === 'plugin'
+    && 'plugin' in source ? source.plugin : undefined
+  const producer = process.env.DSH_CLIENT_BUILD_PROFILE === 'clawmaster'
+    && plugin === provenance.label
+    ? plugin === '@deepseek-ai/dsh-system-prompt' || plugin === 'clawmaster-sys-prompt'
+      ? t('message.producer.clawmasterInstructions')
+      : plugin === '@deepseek-ai/dsh-time-context' || plugin === 'time-context'
+        ? t('message.producer.currentTime')
+        : provenance.label
+    : provenance.label
   // Resolved rather than declared: a form whose fields are unreadable renders
   // the opaque body, and the marker must say what the row actually shows.
   const { rendered, summary, body } = contextBody(form, { content, source, t })
@@ -42,13 +52,13 @@ export function ContextInjectionRow({ content, source, provenance, form, t }: Co
         : <IconContextInjectionOutline16 size={14} />}
       chevronClassName={css.chevron}
       title={t(provenance.role === 'recall' ? 'message.contextRecall' : 'message.contextInjection')}
-      collapsedContent={provenance.label === null ? undefined : (
+      collapsedContent={producer === null ? undefined : (
         /* ToolRow's separator shape: an aria-hidden dot, so the accessible name
            stays the two readable parts and the two disclosure rows expose one
            name shape. A source that names no producer drops the dot with it. */
         <>
           <span className={css.sep} aria-hidden />
-          <span className={css.source} data-context-source>{provenance.label}</span>
+          <span className={css.source} data-context-source>{producer}</span>
           {summary !== null && process.env.DSH_CLIENT_BUILD_PROFILE !== 'clawmaster' && (
             <>
               <span className={css.sep} aria-hidden />

@@ -4,6 +4,22 @@ exports[`ClawMaster process disclosures (en) > keeps memory source visible and r
 
 exports[`ClawMaster process disclosures (en) > keeps reasoning out of the collapsed DOM through streaming and completion 1`] = `"Think"`;
 
+exports[`ClawMaster process disclosures (en) > presents @deepseek-ai/dsh-system-prompt with a product label while retaining its recorded source 1`] = `"Context injectionClawMaster instructions"`;
+
+exports[`ClawMaster process disclosures (en) > presents @deepseek-ai/dsh-time-context with a product label while retaining its recorded source 1`] = `"Context injectionCurrent time"`;
+
+exports[`ClawMaster process disclosures (en) > presents clawmaster-sys-prompt with a product label while retaining its recorded source 1`] = `"Context injectionClawMaster instructions"`;
+
+exports[`ClawMaster process disclosures (en) > presents time-context with a product label while retaining its recorded source 1`] = `"Context injectionCurrent time"`;
+
 exports[`ClawMaster process disclosures (zh) > keeps memory source visible and reveals its recorded body only on demand 1`] = `"上下文注入OpenViking Memory"`;
 
 exports[`ClawMaster process disclosures (zh) > keeps reasoning out of the collapsed DOM through streaming and completion 1`] = `"思考"`;
+
+exports[`ClawMaster process disclosures (zh) > presents @deepseek-ai/dsh-system-prompt with a product label while retaining its recorded source 1`] = `"上下文注入ClawMaster 工作指令"`;
+
+exports[`ClawMaster process disclosures (zh) > presents @deepseek-ai/dsh-time-context with a product label while retaining its recorded source 1`] = `"上下文注入当前时间"`;
+
+exports[`ClawMaster process disclosures (zh) > presents clawmaster-sys-prompt with a product label while retaining its recorded source 1`] = `"上下文注入ClawMaster 工作指令"`;
+
+exports[`ClawMaster process disclosures (zh) > presents time-context with a product label while retaining its recorded source 1`] = `"上下文注入当前时间"`;

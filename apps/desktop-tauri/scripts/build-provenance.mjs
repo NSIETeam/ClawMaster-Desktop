@@ -1,9 +1,10 @@
 /** Bind desktop build stages to Git source bytes without distributing Git metadata. */
 import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
-import { existsSync, globSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, globSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertReleaseCommit, captureBuildInventory } from './build-inventory.mjs'
 
 /** Complete compiler output and source record retained only in the checkout. */
 export const HARNESS_PROVENANCE_PATH = '.dsh-build/desktop-harness-provenance.json'
@@ -133,6 +134,7 @@ export function recordPreparedBuild(root, source, mode = desktopBuildMode()) {
   assertSource(root, source, mode)
   const value = { ...harness,
     buildId: `${mode}${source.dirty ? '-dirty' : ''}-${source.gitCommit.slice(0, 12)}-${source.sourceSha256.slice(0, 12)}`,
+    inventory: captureBuildInventory(root),
     artifacts: { ...harness.artifacts, product: artifactDigest(root, 'product') } }
   writeRecord(root, PREPARED_PROVENANCE_PATH, value)
   return value
@@ -143,14 +145,16 @@ export function verifyPreparedBuild(root, mode = desktopBuildMode()) {
   const value = readRecord(root, PREPARED_PROVENANCE_PATH, mode)
   const harness = verifyHarnessBuild(root, mode)
   if (JSON.stringify(value.source) !== JSON.stringify(harness.source)
+    || JSON.stringify(value.inventory) !== JSON.stringify(captureBuildInventory(root))
     || JSON.stringify(value.artifacts) !== JSON.stringify({ ...harness.artifacts, product: artifactDigest(root, 'product') })) {
     throw new Error('Desktop product artifacts differ from their recorded source build')
   }
   return value
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url)) {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
   const source = captureBuildSource(root)
+  if (desktopBuildMode() === 'release') assertReleaseCommit(source, process.env.DSH_DESKTOP_RELEASE_COMMIT)
   console.log(JSON.stringify({ mode: desktopBuildMode(), source }, null, 2))
 }

@@ -7,6 +7,7 @@ mod overlay;
 mod runtime;
 mod tray;
 mod updater;
+mod webview_security;
 mod window_layout;
 
 use desktop_settings::AgentEnvironment;

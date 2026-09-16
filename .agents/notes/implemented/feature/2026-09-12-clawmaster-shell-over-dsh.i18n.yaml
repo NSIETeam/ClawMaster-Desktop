@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-12-clawmaster-shell-over-dsh.md
-2026-09-12-clawmaster-shell-over-dsh.md: e81280a0462fd422031aef5f4d019036c79acef8
-2026-09-12-clawmaster-shell-over-dsh.zh.md: 493567d1c4874055ec171922d23d6afd75bf61b6
+2026-09-12-clawmaster-shell-over-dsh.md: ccec369502055193824dcb186ac0761074f5b258
+2026-09-12-clawmaster-shell-over-dsh.zh.md: 159395288c9344ab617252fa74d19ed93e3c9ec3

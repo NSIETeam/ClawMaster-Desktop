@@ -2,15 +2,17 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(not(target_os = "macos"))]
 use tauri::window::Color;
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
 use tauri::{
     AppHandle, LogicalPosition, LogicalSize, Manager, WebviewBuilder, WebviewUrl,
     WebviewWindowBuilder, WindowEvent,
 };
-#[cfg(target_os = "macos")]
-use tauri::TitleBarStyle;
 
 /// Window backdrop shown before the Web UI paints.
+#[cfg(not(target_os = "macos"))]
 const DSH_BG: Color = Color(21, 21, 23, 255);
 
 use crate::desktop_settings::{self, AgentEnvironment, CloseAction};
@@ -18,7 +20,7 @@ use crate::i18n::{self, Msg};
 use crate::notify;
 use crate::runtime::boot_log;
 use crate::runtime::DesktopRuntime;
-use crate::window_layout::{desktop_overlay, resolve_controls_layout};
+use crate::window_layout::resolve_controls_layout;
 
 static QUIT_REQUESTED: AtomicBool = AtomicBool::new(false);
 
@@ -56,15 +58,15 @@ fn mark_process_end(app: &AppHandle) {
     stop_host(app);
 }
 
-/// Reap the Host Node tree. `app.exit` / `app.restart` skip `Drop`.
+/// Stop background update checks and reap the Host Node tree. Exit and restart skip `Drop`.
 pub fn stop_host(app: &AppHandle) {
+    crate::updater::stop_background(app);
     if let Some(runtime) = app.try_state::<DesktopRuntime>() {
         runtime.host.stop();
     }
 }
 
-/// Create the shell window that embeds `dsh web`, with the platform's native
-/// decorations and, on macOS, the title bar merged into the content.
+/// Create the shell window with native controls outside the embedded Web UI.
 pub fn open_main_window(app: &AppHandle, url: &str) -> Result<(), String> {
     if let Some(existing) = app.get_window("main") {
         let _ = existing.show();
@@ -92,18 +94,19 @@ pub fn open_main_window(app: &AppHandle, url: &str) -> Result<(), String> {
         .center()
         .decorations(true)
         .visible(false)
-        .background_color(DSH_BG)
         .initialization_script(&init);
 
-    // macOS keeps its native decorations (rounded corners, shadow, resizing,
-    // window controls) but draws the title bar as an overlay over the content:
-    // no title row and no product name in window chrome, with the traffic
-    // lights floating over the product UI's top-left corner. The window keeps
-    // the live system appearance instead of pinning a color scheme.
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.background_color(DSH_BG);
+    }
+
+    // Transparent preserves the native content rectangle below the controls.
+    // Tauri's Wry runtime 2.11 enables a full-size view for Visible and Overlay.
     #[cfg(target_os = "macos")]
     {
         builder = builder
-            .title_bar_style(TitleBarStyle::Overlay)
+            .title_bar_style(TitleBarStyle::Transparent)
             .hidden_title(true);
     }
 
@@ -120,16 +123,16 @@ pub fn open_main_window(app: &AppHandle, url: &str) -> Result<(), String> {
 
     // 独立 WebView 提供第一方浏览器环境，保留上游 SameSite=Strict 的认证 cookie。
     let content_url = url.parse::<url::Url>().map_err(|_| "Host 启动地址无效")?;
-    // An overlay title bar leaves the product Web UI owning the window's
-    // top-left corner, so the Host webview receives the chrome metrics it must
-    // lay out around. Other platforms reserve their title bar outside the
-    // content and report no overlay.
-    let overlay = content_bootstrap();
+    crate::webview_security::validate_host_url(&content_url)?;
+    let host_origin = content_url.clone();
     let native = app.get_window("main").ok_or("main window is missing")?;
     let content = native
         .add_child(
             WebviewBuilder::new("content", WebviewUrl::External(content_url))
-                .initialization_script(&overlay),
+                .on_navigation(move |target| {
+                    crate::webview_security::allows_host_navigation(&host_origin, target)
+                })
+                .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny),
             LogicalPosition::new(0.0, f64::from(resolve_controls_layout().titlebar_height)),
             content_size(&native)?,
         )
@@ -269,56 +272,6 @@ fn content_size(window: &tauri::Window) -> Result<LogicalSize<f64>, String> {
     ))
 }
 
-/// Boot script for the Host webview: the window-chrome metrics the product UI
-/// lays itself out around, plus the adaptation an overlay title bar needs.
-///
-/// The Host web UI is served from its own origin, so the shell cannot reach
-/// into its components. It publishes the metrics and adapts the rendered side
-/// column instead: that column owns the window's top-left corner, so it
-/// reserves the strip the floating system controls occupy and serves as the
-/// window drag region. A bare `data-tauri-drag-region` only fires on direct
-/// hits, so the controls inside the column keep their own behavior. The script
-/// runs on every document load and watches for the column, which the Host
-/// renders asynchronously and may replace.
-fn content_bootstrap() -> String {
-    format!(
-        "window.__DSH_DESKTOP_OVERLAY__ = {};\n{}",
-        serde_json::to_string(&desktop_overlay()).unwrap_or_else(|_| "null".into()),
-        OVERLAY_BOOTSTRAP,
-    )
-}
-
-/// Product-UI adaptation for the macOS overlay title bar.
-const OVERLAY_BOOTSTRAP: &str = r#"
-(function () {
-  var overlay = window.__DSH_DESKTOP_OVERLAY__;
-  if (!overlay || overlay.titlebar_style !== "overlay" || !(overlay.controls_inset > 0)) return;
-  var inset = overlay.controls_inset + "px";
-  var column = null;
-  function apply() {
-    if (column && column.isConnected && column.style.paddingTop === inset) return;
-    var mark = document.querySelector("img.cm-dsh-brand-mark:not(.cm-dsh-hero-mark)");
-    var button = mark && mark.closest("button");
-    var candidate = button && button.parentElement && button.parentElement.parentElement;
-    if (!candidate) return;
-    column = candidate;
-    column.style.paddingTop = inset;
-    column.setAttribute("data-tauri-drag-region", "");
-  }
-  function watch() {
-    apply();
-    new MutationObserver(apply).observe(
-      document.documentElement, { childList: true, subtree: true },
-    );
-  }
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", watch, { once: true });
-  } else {
-    watch();
-  }
-})();
-"#;
-
 /// Toast copy when the tray changes the agent runtime target.
 pub fn environment_changed_message() -> &'static str {
     i18n::t(Msg::EnvRestart)
@@ -344,23 +297,10 @@ pub fn remember_agent_environment(app: &AppHandle, value: AgentEnvironment) {
 
 #[cfg(test)]
 mod tests {
-    use super::{content_bootstrap, environment_changed_message};
+    use super::environment_changed_message;
 
     #[test]
     fn environment_changed_message_is_restart_toast() {
         assert_eq!(environment_changed_message(), "运行环境将在重启后生效");
-    }
-
-    #[test]
-    fn host_bootstrap_publishes_the_window_chrome() {
-        let script = content_bootstrap();
-        assert!(script.starts_with("window.__DSH_DESKTOP_OVERLAY__ = "));
-        assert!(script.contains("data-tauri-drag-region"));
-        if cfg!(target_os = "macos") {
-            assert!(script.contains(r#""titlebar_style":"overlay""#));
-            assert!(script.contains(r#""controls_inset":28"#));
-        } else {
-            assert!(script.contains("__DSH_DESKTOP_OVERLAY__ = null;"));
-        }
     }
 }

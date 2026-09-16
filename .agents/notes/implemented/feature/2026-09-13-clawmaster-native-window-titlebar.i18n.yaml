@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-13-clawmaster-native-window-titlebar.md
-2026-09-13-clawmaster-native-window-titlebar.md: 1c08876abdd63741a2b12eec585c5bd9305fb329
-2026-09-13-clawmaster-native-window-titlebar.zh.md: 897f4d31f3eab412b29d19100258c3c56c9f225f
+2026-09-13-clawmaster-native-window-titlebar.md: a57e9ca5897e529530b2dfffae2fd728e7e0e795
+2026-09-13-clawmaster-native-window-titlebar.zh.md: 4102d03bacc2b1bcd04c2c3aa7f4199ce60268dc

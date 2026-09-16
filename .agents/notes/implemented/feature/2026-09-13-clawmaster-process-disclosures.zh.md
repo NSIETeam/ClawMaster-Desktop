@@ -12,7 +12,7 @@ Status: implemented
 
 现有 ClawMaster 构建配置从收起的标题中省略思考和上下文预览，以及 Shell/代码摘要。来源名称和简短错误摘要继续可见。现有展开控件保留全部可用输入和输出；后台 Shell 回执也能展开。React 状态记录已挂载行的手动展开状态，不通过 effect 在流式更新或完成时重置。Turn 分组在紧凑模式下负责整组过程折叠，包括运行中的「工作中」行；最新步骤的回答保持可见，重试、Compaction、失败和审批展示仍可访问。投影器与 renderer 使用相同的过程范围判断：隐藏开场人工消息之前的提示词时，也必须提供对应展开控件。
 
-展示不修改 Session 事件、模型输入、最终回答或审批控件。其他 DSH 构建保留现有预览。[桌面壳决策](2026-09-12-clawmaster-shell-over-dsh.zh.md)定义产品与运行时的分工；[Chat](../../../../packages/client/ui-chat/README.zh.md) 和 [Tool](../../../../packages/client/ui-tool/README.zh.md) 参考文档定义组件行为。
+已知系统提示词与时间上下文插件来源在标题中使用本地化 ClawMaster 名称。展开的来源字段保留记录中的软件包 ID。映射要求匹配插件来源，因此不会重命名指令路径、未知来源和用户文字。展示不修改 Session 事件、模型输入、最终回答或审批控件。其他 DSH 构建保留现有预览与来源名称。[桌面壳决策](2026-09-12-clawmaster-shell-over-dsh.zh.md)定义产品与运行时的分工；[Chat](../../../../packages/client/ui-chat/README.zh.md) 和 [Tool](../../../../packages/client/ui-tool/README.zh.md) 参考文档定义组件行为。
 
 ## Alternatives considered
 

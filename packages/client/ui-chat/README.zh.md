@@ -53,7 +53,7 @@ kind: "package-reference"
 <a id="turn-process-folding"></a>
 ## 轮次过程折叠
 
-ClawMaster 构建默认收起思考和上下文正文，并省略标题旁的内容预览。标题保留内容类型和上下文来源。同一行的流式更新保留用户手动展开状态；Session 事件保持完整。[展示决策](../../../.agents/notes/implemented/feature/2026-09-13-clawmaster-process-disclosures.zh.md)定义产品范围。
+ClawMaster 构建默认收起思考和上下文正文，并省略标题旁的内容预览。标题保留内容类型和上下文来源，为已知系统提示词与时间上下文插件使用产品名称；展开的来源字段保留记录中的软件包标识。其他来源和用户控制的路径不会被重命名。同一行的流式更新保留用户手动展开状态；Session 事件保持完整。[展示决策](../../../.agents/notes/implemented/feature/2026-09-13-clawmaster-process-disclosures.zh.md)定义产品范围。
 
 「设置 → 通用设置」提供持久化到 `ui-chat` 命名空间的「标准」/「紧凑」对话显示偏好，默认使用「紧凑」。标准模式保持过程行可见且不渲染轮次过程控件。紧凑模式把初始系统提示词、注入上下文、推理、较早的 Assistant 内容和工具行归入开场人工消息之后的过程组。打开的轮次显示默认收起的「工作中」行，并注明最新被收起的活动。当前步骤的回答在流式输出时保持可见，展开或收起过程不会重复显示回答。运行中的重试、Compaction 和扩展行保留在运行过程组外，用户与 steering 消息、错误、最大 token 和 turn-tail 行也保持独立。审批控件继续由独立的输入区负责。
 

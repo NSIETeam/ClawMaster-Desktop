@@ -10,13 +10,13 @@ An in-window title bar duplicates the platform's controls and product branding w
 
 ## Decision
 
-The main window uses native decorations. macOS selects `TitleBarStyle::Overlay` with `hidden_title(true)`: traffic lights remain native, title text is hidden, and no separate title row is drawn. `titlebar_height()` is zero, so the content WebView fills the window. The platform owns window appearance; the embedded DSH client owns its Web theme. They may differ. `Theme::Dark`, private AppKit masking, and the frameless-only Tauri feature are unnecessary.
+The main window uses native decorations and macOS hides title text. The platform owns window appearance; the embedded DSH client owns its Web theme. They may differ. A custom themed title row, private AppKit masking, and the frameless-only Tauri feature are unnecessary.
 
-Native macOS controls share the content area. The content bootstrap supplies `__DSH_DESKTOP_OVERLAY__` with a 28-pixel controls inset and reserves that space on the product sidebar header identified by its ClawMaster mark. A scoped observer reapplies the reservation when the sidebar mounts again. Other platforms receive no overlay metrics. Loopback Host content receives only drag and double-click maximization permissions; application commands remain local to the shell.
+The [native content-rectangle decision](../architecture/2026-09-15-macos-native-content-rectangle.md) owns macOS control separation and supersedes the overlay reservation. The [native-privilege decision](../architecture/2026-09-16-clawmaster-native-privilege-isolation.md) confines commands to packaged shell WebViews; Host content receives no native permissions.
 
 `shell.html` owns the close-confirmation dialog, using the system color scheme. It hides the content WebView while the dialog is open. The saved minimize preference hides the main window and keeps the Host running; explicit Quit stops the Host process tree. macOS `RunEvent::Reopen` calls `show_main`, which shows, unminimizes and focuses the existing main or startup window. It creates no window, Host, Session or Workspace. Existing `ExitRequested` prevention still protects the running app until Quit is requested.
 
-`window_layout.rs` retains button-layout parsing for the local chrome bootstrap and reserves no title-bar height. The [ClawMaster shell decision](2026-09-12-clawmaster-shell-over-dsh.md) owns the product identity, runtime and release configuration.
+`window_layout.rs` retains button-layout parsing for the local chrome bootstrap and adds no in-content title-bar offset. The [ClawMaster shell decision](2026-09-12-clawmaster-shell-over-dsh.md) owns the product identity, runtime and release configuration.
 
 ## Alternatives considered
 
@@ -30,6 +30,6 @@ Native macOS controls share the content area. The content bootstrap supplies `__
 
 ## Consequences
 
-Native decorations own window geometry and appearance, while `DSH_BG` remains only the first-frame backdrop. Matching a user-selected Web theme is not a native-window guarantee. Sidebar markup changes require checking the traffic-light reservation and drag region in the packaged macOS app.
+Native decorations own window geometry and appearance. Matching a user-selected Web theme is not a native-window guarantee. The content-rectangle decision owns the packaged macOS geometry check independently of sidebar markup.
 
 Rust layout and close-preference tests cover existing mechanical behavior. Packaged desktop acceptance must additionally check close-to-hide followed by Dock or Finder reopening, retained Host identity, close-dialog visibility, and native controls in both system appearances. Restoring a custom title row requires coordinating its markup, content height and permissions; it is not a theme setting.
