@@ -146,8 +146,9 @@ jobs:
             -H 'Accept: application/vnd.github+json' \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$NODE_BUILD_RUN_ID/jobs?per_page=100")"
           sha="$(jq -er '.head_sha' <<< "$metadata")"
-          test "$(jq -er '.status' <<< "$metadata")" = completed
-          test "$(jq -er '.jobs[] | select(.name == "Android Node runtime (x86_64)") | .conclusion' <<< "$jobs")" = success
+          x86_job="$(jq -cer '.jobs[] | select(.name == "Android Node runtime (x86_64)")' <<< "$jobs")"
+          test "$(jq -er '.status' <<< "$x86_job")" = completed
+          test "$(jq -er '.conclusion' <<< "$x86_job")" = success
           echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Download Android Node runtimes from this workflow run
