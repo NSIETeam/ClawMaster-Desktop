@@ -9,8 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       node_build_run_id:
-        description: Completed Android Node runtime build run ID for app-process smoke testing
-        required: true
+        description: Optional completed Android Node runtime build run ID; omit to build the runtime in this run
+        required: false
+        default: ""
         type: string
 permissions:
   contents: read
@@ -22,7 +23,7 @@ concurrency:
 
 jobs:
   node-runtime:
-    if: github.event_name != 'workflow_dispatch'
+    if: github.event_name != 'workflow_dispatch' || inputs.node_build_run_id == ''
     name: Android Node runtime (${{ matrix.arch }})
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -59,7 +60,7 @@ jobs:
           cd "$RUNNER_TEMP/node-v22.19.0"
           export CC_host=gcc CXX_host=g++ AR_host=gcc-ar
           ./android-configure "$ANDROID_HOME/ndk/28.2.13676358" 26 "${{ matrix.arch }}"
-          make -j"$(nproc)"
+          make -j"$(nproc)" node
 
       - name: Verify Android ELF alignment and collect runtime files
         shell: bash
@@ -118,7 +119,7 @@ jobs:
   android:
     name: Android ${{ matrix.api-level }} emulator
     needs: node-runtime
-    if: always() && (needs.node-runtime.result == 'success' || github.event_name == 'workflow_dispatch')
+    if: always() && (needs.node-runtime.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -129,7 +130,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Resolve Android Node build provenance
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''
         id: node-build
         shell: bash
         env:
@@ -152,14 +153,14 @@ jobs:
           echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Download Android Node runtimes from this workflow run
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name != 'workflow_dispatch' || inputs.node_build_run_id == ''
         uses: actions/download-artifact@v8
         with:
           pattern: clawmaster-node-android-*-${{ github.sha }}
           path: ${{ runner.temp }}/clawmaster-node
 
       - name: Download x86_64 Android Node runtime from the completed build
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''
         uses: actions/download-artifact@v8
         with:
           name: clawmaster-node-android-x86_64-${{ steps.node-build.outputs.head_sha }}
@@ -169,9 +170,11 @@ jobs:
 
       - name: Package Android Node runtimes for app-process validation
         shell: bash
+        env:
+          NODE_BUILD_RUN_ID: ${{ inputs.node_build_run_id }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && -n "$NODE_BUILD_RUN_ID" ]]; then
             jni=apps/android/app/src/main/jniLibs/x86_64
             mkdir -p "$jni"
             install -m 0755 "$RUNNER_TEMP/clawmaster-node-x86_64/node" "$jni/libclawmaster_node.so"
@@ -234,7 +237,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Exercise the release app on a cloud emulator
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name != 'workflow_dispatch' || inputs.node_build_run_id == ''
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: ${{ matrix.api-level }}
@@ -247,7 +250,7 @@ jobs:
             -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.StandaloneAgentTest,team.nsi.clawmaster.android.WorkspaceAgentTest,team.nsi.clawmaster.android.AndroidNodeProcessTest
 
       - name: Run Android Node from the application UID on a cloud emulator
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 36
