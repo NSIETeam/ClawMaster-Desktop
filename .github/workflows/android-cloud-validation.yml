@@ -76,7 +76,7 @@ jobs:
           cd "$RUNNER_TEMP/node-v22.19.0"
           export CC_host=gcc CXX_host=g++ AR_host=gcc-ar
           ./android-configure "$ANDROID_HOME/ndk/28.2.13676358" 26 "${{ matrix.arch }}"
-          make -j"$(nproc)" node
+          make -j2 node
 
       - name: Verify Android ELF alignment and collect runtime files
         shell: bash
