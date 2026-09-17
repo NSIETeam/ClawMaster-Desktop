@@ -191,8 +191,8 @@ public final class MainActivity extends Activity implements AgentController.List
             .setPositiveButton(R.string.approve, (dialog, which) -> controller.decide(proposed, true))
             .setNegativeButton(R.string.reject, (dialog, which) -> controller.decide(proposed, false))
             .setOnCancelListener(dialog -> controller.decide(proposed, false)).create();
-        approvalDialog.show();
         approvalDialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        approvalDialog.show();
     }
 
     private void renderChat() {
