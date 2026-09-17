@@ -15,7 +15,7 @@ final class AgentNotifications {
     static Notification build(Context context, int text, boolean ongoing) {
         NotificationManager manager = context.getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel(CHANNEL, context.getString(R.string.task_channel), NotificationManager.IMPORTANCE_LOW));
-        PendingIntent open = PendingIntent.getActivity(context, 0, new Intent(context, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent open = PendingIntent.getActivity(context, 0, new Intent(context, DshActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Builder builder = new Notification.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_clawmaster).setContentTitle(context.getString(R.string.app_name))
             .setContentText(context.getString(text)).setContentIntent(open).setOngoing(ongoing)

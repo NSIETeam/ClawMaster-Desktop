@@ -4,6 +4,22 @@ on:
   pull_request:
     paths:
       - "apps/android/**"
+      - "apps/cli/**"
+      - "apps/web/**"
+      - "apps/desktop-tauri/**"
+      - "apps/desktop-defaults/**"
+      - "frontends/dsh/**"
+      - "frontends/guard/**"
+      - "frontends/graph-memory/**"
+      - "frontends/notes/**"
+      - "frontends/office/**"
+      - "frontends/rpa/**"
+      - "frontends/updates/**"
+      - "packages/**"
+      - "native/system/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "scripts/build.ts"
       - ".github/workflows/android-cloud-validation.yml"
 
   workflow_dispatch:
@@ -121,7 +137,7 @@ jobs:
     needs: node-runtime
     if: always() && (needs.node-runtime.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''))
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -200,12 +216,79 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
 
       - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.13"
           cache-provider: basic
+
+      - name: Install locked ClawMaster workspace dependencies
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          for frontend in dsh office notes graph-memory guard rpa updates; do
+            npm ci --prefix "frontends/$frontend" --ignore-scripts
+          done
+
+      - name: Build desktop client and Android DSH payload on this runner
+        env:
+          DSH_DESKTOP_BUILD_MODE: release
+          DSH_TELEMETRY_DISABLED: '1'
+        run: |
+          set -euo pipefail
+          pnpm run build
+          npm run build --prefix frontends/dsh
+          npm run build --prefix frontends/office
+          npm run build --prefix frontends/notes
+          npm run build --prefix frontends/graph-memory
+          npm run build --prefix frontends/guard
+          npm run build --prefix frontends/rpa
+          npm run build --prefix frontends/updates
+          rustup target add x86_64-unknown-linux-gnu
+          node apps/desktop-tauri/scripts/prepare-rpa-native.mjs --target x86_64-unknown-linux-gnu
+          pnpm --dir apps/desktop-tauri run build:harness
+
+      - name: Add checksummed desktop DSH and npm payloads to validation APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          node_archive="$RUNNER_TEMP/node-v22.19.0.tar.xz"
+          curl --fail --location --retry 3 https://nodejs.org/dist/v22.19.0/node-v22.19.0.tar.xz --output "$node_archive"
+          echo '0272acfce50ce9ad060288321b1092719a7f19966f81419835410c59c09daa46  '"$node_archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/node-source" apps/android/app/src/main/assets/dsh
+          tar -xJf "$node_archive" --strip-components=1 -C "$RUNNER_TEMP/node-source"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, zipfile
+          assets = pathlib.Path('apps/android/app/src/main/assets/dsh')
+          harness = pathlib.Path('apps/desktop-tauri/bundled/harness')
+          manifest = json.loads((harness / '.bundle-manifest.json').read_text())
+          with zipfile.ZipFile(assets / 'harness.zip', 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+              for item in sorted(harness.rglob('*')):
+                  if item.is_file():
+                      archive.write(item, item.relative_to(harness).as_posix())
+          harness_metadata = {
+              'archiveSha256': hashlib.sha256((assets / 'harness.zip').read_bytes()).hexdigest(),
+              'contentSha256': manifest['contentSha256'],
+              'harnessVersion': manifest['harnessVersion'],
+              'desktopVersion': manifest['desktopVersion'],
+          }
+          (assets / 'harness.zip.json').write_text(json.dumps(harness_metadata, sort_keys=True) + '\n')
+          npm_root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'node-source/deps/npm'
+          with zipfile.ZipFile(assets / 'npm.zip', 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+              for item in sorted(npm_root.rglob('*')):
+                  if item.is_file():
+                      archive.write(item, item.relative_to(npm_root).as_posix())
+          npm_metadata = {
+              'archiveSha256': hashlib.sha256((assets / 'npm.zip').read_bytes()).hexdigest(),
+              'npmVersion': json.loads((npm_root / 'package.json').read_text())['version'],
+          }
+          (assets / 'npm.zip.json').write_text(json.dumps(npm_metadata, sort_keys=True) + '\n')
+          PY
 
       - name: Create disposable validation signing key
         shell: bash
@@ -247,7 +330,7 @@ jobs:
           disable-animations: true
           script: >-
             gradle -p apps/android :app:connectedReleaseAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.StandaloneAgentTest,team.nsi.clawmaster.android.WorkspaceAgentTest,team.nsi.clawmaster.android.AndroidNodeProcessTest
+            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.StandaloneAgentTest,team.nsi.clawmaster.android.WorkspaceAgentTest,team.nsi.clawmaster.android.AndroidNodeProcessTest,team.nsi.clawmaster.android.DshParityTest
 
       - name: Run Android Node from the application UID on a cloud emulator
         if: github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''
@@ -260,4 +343,4 @@ jobs:
           disable-animations: true
           script: >-
             gradle -p apps/android :app:connectedReleaseAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.AndroidNodeProcessTest
+            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.AndroidNodeProcessTest,team.nsi.clawmaster.android.DshParityTest

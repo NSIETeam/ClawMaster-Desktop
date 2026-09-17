@@ -13,4 +13,7 @@
     <item name="save_settings" type="id" />
     <item name="tab_files" type="id" />
     <item name="tab_tasks" type="id" />
+    <item name="dsh_web_view" type="id" />
+    <item name="dsh_runtime_status" type="id" />
+    <item name="dsh_retry" type="id" />
 </resources>

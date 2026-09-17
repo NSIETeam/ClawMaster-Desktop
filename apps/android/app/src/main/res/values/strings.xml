@@ -1,6 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ClawMaster</string>
+    <string name="dsh_notification_channel">ClawMaster DSH runtime</string>
+    <string name="dsh_starting">Starting ClawMaster…</string>
+    <string name="dsh_preparing">Preparing ClawMaster</string>
+    <string name="dsh_extracting">Preparing local DSH runtime…</string>
+    <string name="dsh_installing_package_manager">Preparing local packages…</string>
+    <string name="dsh_installing_dependencies">Installing ClawMaster runtime…</string>
+    <string name="dsh_ready">ClawMaster is ready</string>
+    <string name="dsh_start_failed">ClawMaster could not start. Check your connection and retry.</string>
+    <string name="dsh_host_stopped">ClawMaster stopped unexpectedly. Retry to restart it.</string>
+    <string name="dsh_stop">Stop ClawMaster</string>
+    <string name="dsh_stopped">ClawMaster stopped</string>
+    <string name="dsh_retry">Retry</string>
+    <string name="dsh_navigation_blocked">This page is outside ClawMaster.</string>
     <string name="tagline">Independent agent · On your phone</string>
     <string name="chat">Chat</string>
     <string name="notes">Notes</string>

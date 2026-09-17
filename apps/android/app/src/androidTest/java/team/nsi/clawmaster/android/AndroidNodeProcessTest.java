@@ -9,6 +9,8 @@ import org.json.JSONObject;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import java.io.File;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
@@ -48,10 +50,18 @@ public final class AndroidNodeProcessTest {
             java.lang.Process process = builder.start();
             try {
                 assertTrue("Android Node did not exit within 30 seconds", process.waitFor(30, TimeUnit.SECONDS));
-                return new ProcessRunner(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));
+                return new ProcessRunner(process.exitValue(), readOutput(process.getInputStream()));
             } finally {
                 if (process.isAlive()) process.destroyForcibly();
             }
+        }
+
+        private static String readOutput(InputStream input) throws Exception {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[4096];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+            return output.toString(StandardCharsets.UTF_8.name());
         }
     }
 }
