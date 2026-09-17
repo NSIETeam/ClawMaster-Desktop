@@ -29,6 +29,7 @@ public final class DshParityTest {
             JSONObject initial = awaitDesktopClient(scenario, TimeUnit.MINUTES.toMillis(52));
             int firstPort = localPort(initial);
             assertTrue("desktop client must render branded content", initial.getString("body").contains("ClawMaster"));
+            assertTrue("shared ClawMaster WatchDog workbench must mount", initial.getString("body").contains("WatchDog"));
 
             scenario.recreate();
             JSONObject recreated = awaitDesktopClient(scenario, TimeUnit.MINUTES.toMillis(2));
@@ -53,13 +54,15 @@ public final class DshParityTest {
             CountDownLatch evaluated = new CountDownLatch(1);
             scenario.onActivity(activity -> {
                 WebView web = activity.findViewById(R.id.dsh_web_view);
-                web.evaluateJavascript("JSON.stringify({title:document.title,href:location.href,body:document.body?.innerText||''})", value -> {
+                web.evaluateJavascript("JSON.stringify({title:document.title,href:location.href,body:document.body?.innerText||'',workbench:!!document.querySelector('#root .cm-dsh-workbench')})", value -> {
                     try {
                         Object decoded = new JSONTokener(value).nextValue();
                         if (decoded instanceof String) {
                             JSONObject candidate = new JSONObject((String) decoded);
                             if ("ClawMaster".equals(candidate.optString("title"))
                                 && candidate.optString("href").startsWith("http://127.0.0.1:")
+                                && candidate.optBoolean("workbench")
+                                && candidate.optString("body").contains("WatchDog")
                                 && candidate.optString("body").contains("ClawMaster")) result.set(candidate);
                         }
                     } catch (Exception ignored) {
