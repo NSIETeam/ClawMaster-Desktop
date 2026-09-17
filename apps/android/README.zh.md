@@ -58,13 +58,13 @@ Office 工具读取 Word 正文段落及顶层表格、已有电子表格单元�
 gradle -p apps/android :core:test :app:lintRelease :app:assembleRelease
 ```
 
-核心测试使用记录的模型交互，执行随应用交付的循环与文件存储，包括 Office 往返读写、修订冲突、持久化审批和任务恢复。[安卓云端验证工作流](../../.github/workflows/android-cloud-validation.yml)会在 GitHub 托管的 Android 8 和 Android 16 模拟器上构建并测试 release 变体。仪器测试检查原生审批、Activity 重建、Keystore 操作、Office 容器、前台继续运行和系统定时执行。另一个可行性任务会为 arm64 和 x86_64 交叉编译 Node.js 22.19.0，检查 ELF 的 16 KB 对齐，并尝试在 Android 16 的 16 KB 模拟器上运行 x86_64 版本。固定版本的 Node 源码补丁会关闭 V8 在 Android 上不可用的 `execinfo` 堆栈回溯，并补齐 V8 在 Android 构建中链接 host `mksnapshot` 工具所需的 POSIX trap-handler 与 ARM64 模拟器源码映射。Node.js 上游不支持 Android，因此这仍是实验性的前置验证；当前安卓应用还没有打包或启动 DSH。工作流会创建一次性 CI 签名密钥，记录 APK 校验和与签名证书，并将验证产物保留七天。它不会测试从已发布的 0.2.1 APK 升级、普通启动器重启或独立进程冷启动。记录型模型证明本地执行链路，不代表真实服务商可用。
+核心测试使用记录的模型交互，执行随应用交付的循环与文件存储，包括 Office 往返读写、修订冲突、持久化审批和任务恢复。[安卓云端验证工作流](../../.github/workflows/android-cloud-validation.yml)会在 GitHub 托管的 Android 8 和 Android 16 模拟器上构建并测试 release 变体。仪器测试检查原生审批、Activity 重建、Keystore 操作、Office 容器、前台继续运行、系统定时执行，以及应用 UID 下的 Node.js。工作流会为 arm64 和 x86_64 交叉编译 Node.js 22.19.0，检查 ELF 的 16 KB 对齐，并尝试在 Android 16 的 16 KB 模拟器上运行 x86_64 版本。工作流会将两种运行时打入临时 APK 来执行应用进程检查；APK 留在 runner 上，不会上传。固定版本的 Node 源码补丁会关闭 V8 在 Android 上不可用的 `execinfo` 堆栈回溯，并补齐 V8 在 Android 构建中链接 host `mksnapshot` 工具所需的 POSIX trap-handler 与 ARM64 模拟器源码映射。Node.js 上游不支持 Android，因此这仍是实验性的前置验证；分发的安卓应用还没有打包或启动 DSH。工作流会创建一次性 CI 签名密钥，并记录 APK 校验和与签名证书。它不会测试从已发布的 0.2.1 APK 升级、普通启动器重启或独立进程冷启动。记录型模型证明本地执行链路，不代表真实服务商可用。
 
 安卓模拟器构建和仪器测试在 GitHub Actions 中运行。CI 验证密钥应为临时密钥；不得用它签署分发 APK，也不得提交密钥库或密码。
 
 <a id="distribution"></a>
 ## 分发
 
-安卓云端验证工作流构建不可调试的 APK，并在 GitHub 托管模拟器上运行仪器测试。验证产物使用短期证书签名并在七天后过期，仅用于验证。对外分发需要用妥善保留的发布密钥签名已验证 APK，运行 Android 的 `apksigner verify` 检查，并记录 SHA-256 和证书指纹。更新必须使用相同发布密钥和更高的版本代码。
+安卓云端验证工作流构建不可调试的 APK，并在 GitHub 托管模拟器上运行仪器测试。验证 APK 使用临时证书签名并留在 runner 上，不会上传或用于分发。对外分发需要用妥善保留的发布密钥签名已验证 APK，运行 Android 的 `apksigner verify` 检查，并记录 SHA-256 和证书指纹。更新必须使用相同发布密钥和更高的版本代码。
 
 生成 APK 不等于完成 Google Play 发布或 Android 开发者账户验证。云端验证覆盖当前独立安卓实现，不能证明已与桌面端功能对齐。Office 构建会下载校验和固定的兼容源码及 Maven 依赖；许可证保留在重定位运行时中。

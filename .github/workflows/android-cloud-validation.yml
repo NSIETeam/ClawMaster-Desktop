@@ -5,10 +5,16 @@ on:
     paths:
       - "apps/android/**"
       - ".github/workflows/android-cloud-validation.yml"
-  workflow_dispatch:
 
+  workflow_dispatch:
+    inputs:
+      node_build_run_id:
+        description: Completed Android Node runtime build run ID for app-process smoke testing
+        required: true
+        type: string
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: android-cloud-${{ github.event.pull_request.number || github.ref }}
@@ -111,6 +117,8 @@ jobs:
 
   android:
     name: Android ${{ matrix.api-level }} emulator
+    needs: node-runtime
+    if: always() && (needs.node-runtime.result == 'success' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -119,6 +127,67 @@ jobs:
         api-level: ${{ github.event_name == 'workflow_dispatch' && fromJSON('[36]') || fromJSON('[26, 36]') }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Resolve Android Node build provenance
+        if: github.event_name == 'workflow_dispatch'
+        id: node-build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_BUILD_RUN_ID: ${{ inputs.node_build_run_id }}
+        run: |
+          set -euo pipefail
+          metadata="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$NODE_BUILD_RUN_ID")"
+          jobs="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$NODE_BUILD_RUN_ID/jobs?per_page=100")"
+          sha="$(jq -er '.head_sha' <<< "$metadata")"
+          test "$(jq -er '.status' <<< "$metadata")" = completed
+          test "$(jq -er '.jobs[] | select(.name == "Android Node runtime (x86_64)") | .conclusion' <<< "$jobs")" = success
+          echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Download Android Node runtimes from this workflow run
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: clawmaster-node-android-*-${{ github.sha }}
+          path: ${{ runner.temp }}/clawmaster-node
+
+      - name: Download x86_64 Android Node runtime from the completed build
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/download-artifact@v8
+        with:
+          name: clawmaster-node-android-x86_64-${{ steps.node-build.outputs.head_sha }}
+          path: ${{ runner.temp }}/clawmaster-node-x86_64
+          run-id: ${{ inputs.node_build_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Package Android Node runtimes for app-process validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            jni=apps/android/app/src/main/jniLibs/x86_64
+            mkdir -p "$jni"
+            install -m 0755 "$RUNNER_TEMP/clawmaster-node-x86_64/node" "$jni/libclawmaster_node.so"
+            install -m 0644 "$RUNNER_TEMP/clawmaster-node-x86_64/libc++_shared.so" "$jni/libc++_shared.so"
+          else
+            for arch in arm64 x86_64; do
+              case "$arch" in
+                arm64) abi=arm64-v8a ;;
+                x86_64) abi=x86_64 ;;
+              esac
+              runtime="$RUNNER_TEMP/clawmaster-node/clawmaster-node-android-$arch-$GITHUB_SHA"
+              jni="apps/android/app/src/main/jniLibs/$abi"
+              mkdir -p "$jni"
+              install -m 0755 "$runtime/node" "$jni/libclawmaster_node.so"
+              install -m 0644 "$runtime/libc++_shared.so" "$jni/libc++_shared.so"
+            done
+          fi
 
       - uses: actions/setup-java@v5
         with:
@@ -156,9 +225,6 @@ jobs:
           test -n "$apksigner"
           "$apksigner" verify --verbose --print-certs "$apk" | tee android-signature.txt
           sha256sum "$apk" | tee android-sha256.txt
-          mkdir -p android-validation-artifact
-          cp "$apk" android-validation-artifact/clawmaster-android-validation.apk
-          cp android-signature.txt android-sha256.txt android-validation-artifact/
 
       - name: Enable hardware-accelerated Android emulation
         run: |
@@ -167,6 +233,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Exercise the release app on a cloud emulator
+        if: github.event_name != 'workflow_dispatch'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: ${{ matrix.api-level }}
@@ -176,13 +243,17 @@ jobs:
           disable-animations: true
           script: >-
             gradle -p apps/android :app:connectedReleaseAndroidTest
-            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.StandaloneAgentTest,team.nsi.clawmaster.android.WorkspaceAgentTest
+            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.StandaloneAgentTest,team.nsi.clawmaster.android.WorkspaceAgentTest,team.nsi.clawmaster.android.AndroidNodeProcessTest
 
-      - name: Upload validation artifact and evidence
-        if: always() && hashFiles('android-validation-artifact/**') != ''
-        uses: actions/upload-artifact@v7
+      - name: Run Android Node from the application UID on a cloud emulator
+        if: github.event_name == 'workflow_dispatch'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
-          name: clawmaster-android-cloud-validation-api-${{ matrix.api-level }}-${{ github.sha }}
-          path: android-validation-artifact/
-          if-no-files-found: error
-          retention-days: 7
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          script: >-
+            gradle -p apps/android :app:connectedReleaseAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.AndroidNodeProcessTest
