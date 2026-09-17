@@ -98,6 +98,10 @@ public final class MainActivity extends Activity implements AgentController.List
     }
     @Override protected void onResume() { super.onResume(); resumed = true; if (controller != null) changed(); }
     @Override protected void onPause() { resumed = false; super.onPause(); }
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && resumed && controller != null) changed();
+    }
     @Override protected void onDestroy() {
         if (controller != null) controller.remove(this);
         if (approvalDialog != null) approvalDialog.dismiss();
@@ -157,6 +161,7 @@ public final class MainActivity extends Activity implements AgentController.List
         if ("chat".equals(tab)) renderChat();
         if (!resumed) return;
         JSONObject proposed = controller.running() ? null : controller.approval();
+        if (proposed != null && !getWindow().getDecorView().hasWindowFocus()) return;
         if (proposed == displayedApproval) return;
         if (approvalDialog != null) approvalDialog.dismiss();
         approvalDialog = null;
