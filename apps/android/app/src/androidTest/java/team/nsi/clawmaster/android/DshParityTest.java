@@ -5,6 +5,7 @@ import android.webkit.WebView;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.platform.app.InstrumentationRegistry;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import org.junit.Test;
@@ -27,6 +28,7 @@ public final class DshParityTest {
         }
         try (ActivityScenario<DshActivity> scenario = ActivityScenario.launch(DshActivity.class)) {
             JSONObject initial = awaitDesktopClient(scenario, TimeUnit.MINUTES.toMillis(52));
+            assertDesktopProfile(context);
             int firstPort = localPort(initial);
             assertTrue("desktop client must render branded content", initial.getString("body").contains("ClawMaster"));
             assertTrue("shared ClawMaster WatchDog workbench must mount", initial.getString("body").contains("WatchDog"));
@@ -44,6 +46,26 @@ public final class DshParityTest {
             scenario.onActivity(activity -> ((WebView) activity.findViewById(R.id.dsh_web_view)).reload());
             JSONObject restarted = awaitDesktopClient(scenario, TimeUnit.MINUTES.toMillis(2));
             assertEquals("restarted DSH must continue serving the desktop client", "ClawMaster", restarted.getString("title"));
+        }
+    }
+
+    private static void assertDesktopProfile(Context context) throws Exception {
+        java.io.File manifest = new java.io.File(context.getFilesDir(),
+            "clawmaster-dsh/home/profiles/web/package.json");
+        JSONObject profile = new JSONObject(java.nio.file.Files.readString(manifest.toPath(), java.nio.charset.StandardCharsets.UTF_8))
+            .getJSONObject("dsh").getJSONObject("profile");
+        JSONArray bundles = profile.getJSONArray("bundles");
+        String[] expected = {
+            "@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app",
+            "@xmanrui/dsh-im", "dsh-better-sidebar", "@nanmicoder/dsh-agent-teams",
+            "@openviking/dsh-memory-plugin", "dsh-routing-suite", "@clawmaster/dsh-desktop-policy",
+            "@clawmaster/dsh-frontend", "@clawmaster/dsh-guard", "@clawmaster/dsh-notes",
+            "@clawmaster/dsh-graph-memory", "@clawmaster/dsh-office", "@clawmaster/dsh-rpa",
+            "@clawmaster/dsh-updates"
+        };
+        assertEquals("Android must install the desktop default bundle list", expected.length, bundles.length());
+        for (int index = 0; index < expected.length; index++) {
+            assertEquals("desktop bundle order at index " + index, expected[index], bundles.getString(index));
         }
     }
 
