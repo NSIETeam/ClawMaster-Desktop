@@ -13,7 +13,7 @@ function binary(target) {
   if (platform === 'darwin') {
     bytes.writeUInt32LE(0xfeedfacf); bytes.writeUInt32LE(arch === 'arm64' ? 0x0100000c : 0x01000007, 4); bytes.writeUInt32LE(2, 12)
   } else if (platform === 'linux') {
-    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1]).copy(bytes); bytes.writeUInt16LE(62, 18); bytes.writeUInt16LE(3, 16)
+    Buffer.from([0x7f, 0x45, 0x4c, 0x46, 2, 1]).copy(bytes); bytes.writeUInt16LE(arch === 'arm64' ? 183 : 62, 18); bytes.writeUInt16LE(3, 16)
   } else {
     bytes.write('MZ'); bytes.writeUInt32LE(64, 0x3c); bytes.write('PE\0\0', 64); bytes.writeUInt16LE(0x8664, 68); bytes.writeUInt16LE(0x20b, 88)
   }
@@ -27,7 +27,7 @@ test('every release target rejects executable headers for the other platform or 
     assert.throws(() => assertRpaExecutable(bytes.subarray(0, 63), target), /does not match/)
     for (const wrong of Object.keys(RPA_TARGETS).filter(value => value !== target)) assert.throws(() => assertRpaExecutable(bytes, wrong), /does not match/)
   }
-  assert.throws(() => assertRpaExecutable(Buffer.alloc(128), 'aarch64-unknown-linux-gnu'), /Unsupported/)
+  assert.throws(() => assertRpaExecutable(Buffer.alloc(128), 'riscv64-unknown-linux-gnu'), /Unsupported/)
 })
 
 test('packaged helper requires a matching version, digest and executable mode', t => {

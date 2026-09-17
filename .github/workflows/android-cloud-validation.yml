@@ -133,15 +133,16 @@ jobs:
           retention-days: 7
 
   android:
-    name: Android ${{ matrix.api-level }} emulator
+    name: Android ${{ matrix.api-level }} ${{ matrix.emulator_arch }} emulator
     needs: node-runtime
     if: always() && (needs.node-runtime.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''))
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.emulator_arch == 'arm64-v8a' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
         api-level: ${{ github.event_name == 'workflow_dispatch' && fromJSON('[36]') || fromJSON('[26, 36]') }}
+        emulator_arch: [x86_64, arm64-v8a]
     steps:
       - uses: actions/checkout@v6
 
@@ -164,8 +165,11 @@ jobs:
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$NODE_BUILD_RUN_ID/jobs?per_page=100")"
           sha="$(jq -er '.head_sha' <<< "$metadata")"
           x86_job="$(jq -cer '.jobs[] | select(.name == "Android Node runtime (x86_64)")' <<< "$jobs")"
+          arm_job="$(jq -cer '.jobs[] | select(.name == "Android Node runtime (arm64)")' <<< "$jobs")"
           test "$(jq -er '.status' <<< "$x86_job")" = completed
           test "$(jq -er '.conclusion' <<< "$x86_job")" = success
+          test "$(jq -er '.status' <<< "$arm_job")" = completed
+          test "$(jq -er '.conclusion' <<< "$arm_job")" = success
           echo "head_sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Download Android Node runtimes from this workflow run
@@ -184,6 +188,15 @@ jobs:
           run-id: ${{ inputs.node_build_run_id }}
           github-token: ${{ github.token }}
 
+      - name: Download arm64 Android Node runtime from the completed build
+        if: github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: clawmaster-node-android-arm64-${{ steps.node-build.outputs.head_sha }}
+          path: ${{ runner.temp }}/clawmaster-node-arm64
+          run-id: ${{ inputs.node_build_run_id }}
+          github-token: ${{ github.token }}
+
       - name: Package Android Node runtimes for app-process validation
         shell: bash
         env:
@@ -191,10 +204,17 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && -n "$NODE_BUILD_RUN_ID" ]]; then
-            jni=apps/android/app/src/main/jniLibs/x86_64
-            mkdir -p "$jni"
-            install -m 0755 "$RUNNER_TEMP/clawmaster-node-x86_64/node" "$jni/libclawmaster_node.so"
-            install -m 0644 "$RUNNER_TEMP/clawmaster-node-x86_64/libc++_shared.so" "$jni/libc++_shared.so"
+            declare -A runtime_paths=(
+              [arm64]="$RUNNER_TEMP/clawmaster-node-arm64"
+              [x86_64]="$RUNNER_TEMP/clawmaster-node-x86_64"
+            )
+            for arch in arm64 x86_64; do
+              case "$arch" in arm64) abi=arm64-v8a ;; x86_64) abi=x86_64 ;; esac
+              jni="apps/android/app/src/main/jniLibs/$abi"
+              mkdir -p "$jni"
+              install -m 0755 "${runtime_paths[$arch]}/node" "$jni/libclawmaster_node.so"
+              install -m 0644 "${runtime_paths[$arch]}/libc++_shared.so" "$jni/libc++_shared.so"
+            done
           else
             for arch in arm64 x86_64; do
               case "$arch" in
@@ -249,8 +269,13 @@ jobs:
           npm run build --prefix frontends/guard
           npm run build --prefix frontends/rpa
           npm run build --prefix frontends/updates
-          rustup target add x86_64-unknown-linux-gnu
-          node apps/desktop-tauri/scripts/prepare-rpa-native.mjs --target x86_64-unknown-linux-gnu
+          case "$(uname -m)" in
+            aarch64) rpa_target=aarch64-unknown-linux-gnu ;;
+            x86_64) rpa_target=x86_64-unknown-linux-gnu ;;
+            *) echo "Unsupported runner architecture: $(uname -m)" >&2; exit 1 ;;
+          esac
+          rustup target add "$rpa_target"
+          node apps/desktop-tauri/scripts/prepare-rpa-native.mjs --target "$rpa_target"
           pnpm --dir apps/desktop-tauri run build:harness
 
       - name: Add checksummed desktop DSH and npm payloads to validation APK
@@ -325,7 +350,7 @@ jobs:
         with:
           api-level: ${{ matrix.api-level }}
           target: google_apis
-          arch: x86_64
+          arch: ${{ matrix.emulator_arch }}
           profile: pixel_7_pro
           disable-animations: true
           script: >-
@@ -338,7 +363,7 @@ jobs:
         with:
           api-level: 36
           target: google_apis
-          arch: x86_64
+          arch: ${{ matrix.emulator_arch }}
           profile: pixel_7_pro
           disable-animations: true
           script: >-

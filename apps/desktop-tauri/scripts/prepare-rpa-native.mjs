@@ -12,6 +12,7 @@ export const RPA_TARGETS = Object.freeze({
   'x86_64-apple-darwin': { platform: 'darwin', arch: 'x64' },
   'aarch64-apple-darwin': { platform: 'darwin', arch: 'arm64' },
   'x86_64-unknown-linux-gnu': { platform: 'linux', arch: 'x64' },
+  'aarch64-unknown-linux-gnu': { platform: 'linux', arch: 'arm64' },
 })
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 function nativeSourceDigest(root) {
@@ -39,7 +40,7 @@ export function assertRpaExecutable(bytes, target) {
       && bytes.readUInt32LE(12) === 2
   } else if (bytes.length >= 64 && expected.platform === 'linux') {
     matches = bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
-      && bytes[4] === 2 && bytes[5] === 1 && bytes.readUInt16LE(18) === 62
+      && bytes[4] === 2 && bytes[5] === 1 && bytes.readUInt16LE(18) === (expected.arch === 'arm64' ? 183 : 62)
       && [2, 3].includes(bytes.readUInt16LE(16))
   } else if (bytes.length >= 64 && expected.platform === 'win32' && bytes.toString('ascii', 0, 2) === 'MZ') {
     const pe = bytes.readUInt32LE(0x3c)

@@ -19,6 +19,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -101,13 +102,14 @@ public final class DshRuntimeService extends Service {
             File npm = preparePayload("dsh/npm.zip", "dsh/npm.zip.json", root, "npm");
             File node = new File(getApplicationInfo().nativeLibraryDir, "libclawmaster_node.so");
             if (!node.isFile() || !node.canExecute()) throw new IllegalStateException("Android Node runtime unavailable");
+            File commandDirectory = ensureNodeCommand(root, node);
             File nodeLibraries = new File(getApplicationInfo().nativeLibraryDir);
             File pnpmRoot = new File(root, "pnpm-" + PNPM_VERSION);
             File pnpmCli = new File(pnpmRoot, "node_modules/pnpm/bin/pnpm.cjs");
             if (!pnpmCli.isFile()) {
                 phase = "package manager installation";
                 setProgress(getString(R.string.dsh_installing_package_manager));
-                runCommand(new File(harness, "apps/cli"), node, nodeLibraries,
+                runCommand(new File(harness, "apps/cli"), node, commandDirectory, nodeLibraries,
                     new File(npm, "bin/npm-cli.js").getAbsolutePath(), "install", "--prefix", pnpmRoot.getAbsolutePath(),
                     "--no-save", "--no-audit", "--no-fund", "pnpm@" + PNPM_VERSION);
             }
@@ -118,13 +120,13 @@ public final class DshRuntimeService extends Service {
             if (!installMarker.isFile() || !lockHash.equals(readText(installMarker))) {
                 phase = "locked dependency installation";
                 setProgress(getString(R.string.dsh_installing_dependencies));
-                runCommand(harness, node, nodeLibraries, pnpmCli.getAbsolutePath(), "install", "--prod", "--frozen-lockfile");
+                runCommand(harness, node, commandDirectory, nodeLibraries, pnpmCli.getAbsolutePath(), "install", "--prod", "--frozen-lockfile");
                 writeText(installMarker, lockHash);
             }
             if (stopping) return;
             phase = "DSH Web host startup";
             setProgress(getString(R.string.dsh_starting));
-            launchHost(harness, node, nodeLibraries, root);
+            launchHost(harness, node, commandDirectory, nodeLibraries, root);
         } catch (Exception failure) {
             if (!stopping) {
                 android.util.Log.e("ClawMasterDSH", "Runtime failed during " + phase + " (" + failure.getClass().getSimpleName() + ")");
@@ -222,12 +224,33 @@ public final class DshRuntimeService extends Service {
         }
     }
 
-    private void runCommand(File workingDirectory, File node, File libraries, String... arguments) throws Exception {
+    private File ensureNodeCommand(File runtimeRoot, File node) throws Exception {
+        File directory = new File(runtimeRoot, "bin");
+        if (!directory.isDirectory() && !directory.mkdirs()) throw new IllegalStateException("runtime command directory unavailable");
+        File command = new File(directory, "node");
+        boolean linked = false;
+        if (Files.isSymbolicLink(command.toPath())) {
+            linked = node.getAbsolutePath().equals(Files.readSymbolicLink(command.toPath()).toString());
+        }
+        if (!linked) {
+            if (command.exists() && !command.delete()) throw new IllegalStateException("stale Node command link cannot be removed");
+            if (Files.isSymbolicLink(command.toPath()) && !command.delete()) throw new IllegalStateException("stale Node command link cannot be removed");
+            Files.createSymbolicLink(command.toPath(), node.toPath());
+        }
+        return directory;
+    }
+
+    private String commandPath(File commandDirectory) {
+        return commandDirectory.getAbsolutePath() + File.pathSeparator + "/system/bin:/system/xbin";
+    }
+
+    private void runCommand(File workingDirectory, File node, File commandDirectory, File libraries, String... arguments) throws Exception {
         ArrayList<String> command = new ArrayList<>();
         command.add(node.getAbsolutePath());
         for (String argument : arguments) command.add(argument);
         ProcessBuilder builder = new ProcessBuilder(command).directory(workingDirectory).redirectErrorStream(true);
         builder.environment().put("LD_LIBRARY_PATH", libraries.getAbsolutePath());
+        builder.environment().put("PATH", commandPath(commandDirectory));
         builder.environment().put("HOME", new File(getFilesDir(), "clawmaster-dsh/home").getAbsolutePath());
         builder.environment().put("TMPDIR", getCacheDir().getAbsolutePath());
         builder.environment().put("CI", "true");
@@ -246,7 +269,7 @@ public final class DshRuntimeService extends Service {
         if (process.exitValue() != 0) throw new IllegalStateException("runtime dependency installation failed");
     }
 
-    private void launchHost(File harness, File node, File libraries, File runtimeRoot) throws Exception {
+    private void launchHost(File harness, File node, File commandDirectory, File libraries, File runtimeRoot) throws Exception {
         File cli = new File(harness, "apps/cli/lib/bin.js");
         File preload = new File(harness, "desktop-defaults.mjs");
         if (!cli.isFile() || !preload.isFile()) throw new IllegalStateException("desktop DSH artifacts unavailable");
@@ -254,6 +277,7 @@ public final class DshRuntimeService extends Service {
             cli.getAbsolutePath(), "web", "--no-open", "--host", "127.0.0.1", "--port", "0")
             .directory(harness).redirectErrorStream(true);
         builder.environment().put("LD_LIBRARY_PATH", libraries.getAbsolutePath());
+        builder.environment().put("PATH", commandPath(commandDirectory));
         builder.environment().put("DSH_DESKTOP_DEFAULTS", "1");
         builder.environment().put("DSH_HOME", new File(runtimeRoot, "home").getAbsolutePath());
         builder.environment().put("NODE_ENV", "production");
