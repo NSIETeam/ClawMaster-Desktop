@@ -141,7 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api-level: ${{ github.event_name == 'workflow_dispatch' && fromJSON('[36]') || fromJSON('[26, 36]') }}
+        api-level: [26, 36]
         emulator_arch: [x86_64, arm64-v8a]
     steps:
       - uses: actions/checkout@v6
@@ -361,7 +361,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.node_build_run_id != ''
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
-          api-level: 36
+          api-level: ${{ matrix.api-level }}
           target: google_apis
           arch: ${{ matrix.emulator_arch }}
           profile: pixel_7_pro
