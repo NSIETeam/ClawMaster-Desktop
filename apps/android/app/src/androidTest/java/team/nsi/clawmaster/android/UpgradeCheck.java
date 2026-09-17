@@ -15,7 +15,7 @@ import static org.junit.Assert.*;
 public final class UpgradeCheck {
     @Test public void updatePreservesReleasedNotesConversationAndEncryptedKey() throws Exception {
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("0.2.2", context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
+        assertEquals("0.2.3", context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName);
         android.content.SharedPreferences fixture = context.getSharedPreferences("upgrade-fixture", Context.MODE_PRIVATE);
         JSONObject note = new NoteStore(context.getFilesDir().toPath().resolve("notes")).read(fixture.getString("note", ""));
         assertEquals("Retain the released note.", note.getString("content"));

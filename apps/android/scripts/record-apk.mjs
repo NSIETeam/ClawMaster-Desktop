@@ -9,8 +9,8 @@ if (git('status', '--porcelain', '--untracked-files=normal')) throw new Error('A
 const record = {
   schemaVersion: 1,
   product: 'ClawMaster standalone Android',
-  version: '0.2.2',
-  versionCode: 202,
+  version: '0.2.3',
+  versionCode: 203,
   gitCommit: git('rev-parse', 'HEAD'),
   gitTree: git('rev-parse', 'HEAD^{tree}'),
   sha256: createHash('sha256').update(readFileSync(apk)).digest('hex'),

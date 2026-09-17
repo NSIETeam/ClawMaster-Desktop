@@ -59,7 +59,7 @@
     <string name="limit_reached">This conversation has reached its limit. Start a new conversation; the current one is retained.</string>
     <string name="interrupted">The previous task was interrupted. It will not be retried automatically.</string>
     <string name="conflict">This note changed after it was opened. Reopen it before saving.</string>
-    <string name="about_version">Android 0.2.2 · Standalone mobile runtime</string>
+    <string name="about_version">Android 0.2.3</string>
     <string name="files">Files</string>
     <string name="tasks">Tasks</string>
     <string name="files_help">Import a private copy of DOCX, XLSX, PPTX, TXT, Markdown or CSV (up to 8 MiB). Ask the agent to read or edit it; approve each write. Export explicitly to save outside ClawMaster. Complex layout is not rendered.</string>

@@ -59,7 +59,7 @@
     <string name="limit_reached">当前会话已达到长度上限。请新建会话，原会话仍会保留。</string>
     <string name="interrupted">上次任务意外中断，不会自动重试。</string>
     <string name="conflict">这篇笔记在打开后已发生变化，请重新打开后再保存。</string>
-    <string name="about_version">安卓 0.2.2 · 独立移动运行时</string>
+    <string name="about_version">安卓 0.2.3</string>
     <string name="files">文件</string>
     <string name="tasks">任务</string>
     <string name="files_help">导入 DOCX、XLSX、PPTX、TXT、Markdown 或 CSV 的私有副本（最多 8 MiB）。让 Agent 读取或修改，每次写入均需批准。导出后才会保存到应用外；这里不渲染复杂排版。</string>
