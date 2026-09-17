@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   node-runtime:
+    if: github.event_name != 'workflow_dispatch'
     name: Android Node runtime (${{ matrix.arch }})
     runs-on: ubuntu-24.04
     timeout-minutes: 240
@@ -109,6 +110,7 @@ jobs:
           retention-days: 7
 
   android:
+    if: github.event_name != 'workflow_dispatch' || matrix.api-level == 36
     name: Android ${{ matrix.api-level }} emulator
     runs-on: ubuntu-24.04
     timeout-minutes: 60
