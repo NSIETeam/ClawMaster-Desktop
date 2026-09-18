@@ -1,0 +1,85 @@
+name: Windows clean-host repro
+
+# Diagnostic harness, not a release gate. It installs an already-built NSIS package on a
+# disposable Windows runner with every Node/pnpm removed from the environment, then records
+# whether the app can provision its runtime from the network alone.
+#
+# `verify-windows-native.ps1` cannot answer that question because it runs with the runner's
+# preinstalled Node on PATH, so it only exercises the "host Node present" branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Run id whose desktop-windows-x64 artifact holds the installer to test
+        required: true
+      ready_timeout_seconds:
+        description: Seconds to wait for the installed app to reach a ready runtime
+        required: false
+        default: '1500'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  clean-host:
+    name: Installed launch with no Node available
+    runs-on: windows-2025
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows-x64
+          path: installer
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Locate the released installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Get-ChildItem installer -Recurse -File -Filter '*-setup.exe' | Select-Object -First 1
+          if (-not $exe) { throw 'The artifact contains no NSIS installer' }
+          $version = [regex]::Match($exe.Name, '^clawmaster-(?<v>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)-windows-x64-setup\.exe$')
+          if (-not $version.Success) { throw "Unexpected installer name: $($exe.Name)" }
+          "CLEAN_HOST_INSTALLER=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "CLEAN_HOST_VERSION=$($version.Groups['v'].Value)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "installer=$($exe.FullName) version=$($version.Groups['v'].Value)"
+
+      - name: Install and launch without Node
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          ./apps/desktop-tauri/scripts/verify-windows-clean-host.ps1 `
+            -Installer "$env:CLEAN_HOST_INSTALLER" `
+            -ExpectedVersion "$env:CLEAN_HOST_VERSION" `
+            -OutputPath "$env:GITHUB_WORKSPACE/repro/windows-clean-host.json" `
+            -ReadyTimeoutSeconds ${{ inputs.ready_timeout_seconds }}
+
+      - name: Upload clean-host evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-clean-host-repro
+          path: repro/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Report the clean-host outcome
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'repro/windows-clean-host.json'
+          if (-not (Test-Path -LiteralPath $path)) { throw 'The clean-host run produced no evidence file' }
+          $report = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          Write-Host "clean-host ready=$($report.ready) secondsToReady=$($report.secondsToReady) windowSeen=$($report.windowSeen)"
+          Write-Host "boot.log signals: $($report.bootLogSignals | ConvertTo-Json -Compress)"
+          if ($report.ready -ne $true) {
+            throw "The installed package did not reach a ready runtime on a host without Node (elapsed $($report.waitedSeconds)s)"
+          }
