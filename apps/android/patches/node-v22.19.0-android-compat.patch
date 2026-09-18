@@ -15,28 +15,19 @@
  #if __has_feature(address_sanitizer)
 --- a/deps/zlib/cpu_features.c
 +++ b/deps/zlib/cpu_features.c
-@@ -46,5 +46,10 @@
+@@ -46 +46,4 @@
 -#if defined(ARMV8_OS_ANDROID)
 +#if defined(ARMV8_OS_ANDROID) && defined(__aarch64__)
 +#include <asm/hwcap.h>
 +#include <sys/auxv.h>
 +#elif defined(ARMV8_OS_ANDROID)
- #include <cpu-features.h>
- #elif defined(ARMV8_OS_LINUX)
- #include <asm/hwcap.h>
-@@ -106,9 +109,9 @@
- static void _cpu_check_features(void)
- {
- #if defined(ARMV8_OS_ANDROID) && defined(__aarch64__)
+@@ -109,3 +112,3 @@
 -    uint64_t features = android_getCpuFeatures();
 -    arm_cpu_enable_crc32 = !!(features & ANDROID_CPU_ARM64_FEATURE_CRC32);
 -    arm_cpu_enable_pmull = !!(features & ANDROID_CPU_ARM64_FEATURE_PMULL);
 +    unsigned long features = getauxval(AT_HWCAP);
 +    arm_cpu_enable_crc32 = !!(features & HWCAP_CRC32);
 +    arm_cpu_enable_pmull = !!(features & HWCAP_PMULL);
- #elif defined(ARMV8_OS_ANDROID) /* aarch32 */
-     uint64_t features = android_getCpuFeatures();
-     arm_cpu_enable_crc32 = !!(features & ANDROID_CPU_ARM_FEATURE_CRC32);
 --- a/tools/v8_gypfiles/v8.gyp
 +++ b/tools/v8_gypfiles/v8.gyp
 @@ -706,7 +706,7 @@
