@@ -3,6 +3,16 @@
 @@ -28 +28 @@
 -#if V8_LIBC_GLIBC || V8_LIBC_BSD || V8_LIBC_UCLIBC || V8_OS_SOLARIS
 +#if (V8_LIBC_GLIBC || V8_LIBC_BSD || V8_LIBC_UCLIBC || V8_OS_SOLARIS) && !defined(__ANDROID__)
+--- a/test/cctest/test_crypto_clienthello.cc
++++ b/test/cctest/test_crypto_clienthello.cc
+@@ -4,7 +4,7 @@
+ // If the test is being compiled with an address sanitizer enabled, it should
+ // catch the memory violation, so do not use a guard page.
+-#ifdef __SANITIZE_ADDRESS__
++#if defined(__ANDROID__) || defined(__SANITIZE_ADDRESS__)
+ #define NO_GUARD_PAGE
+ #elif defined(__has_feature)
+ #if __has_feature(address_sanitizer)
 --- a/tools/v8_gypfiles/v8.gyp
 +++ b/tools/v8_gypfiles/v8.gyp
 @@ -706,7 +706,7 @@
