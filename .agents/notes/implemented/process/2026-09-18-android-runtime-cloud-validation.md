@@ -10,17 +10,17 @@ The app-process Node check needs an Android runtime built from the same source r
 
 ## Decision
 
-The [Android cloud workflow](../../../../.github/workflows/android-cloud-validation.yml) builds only the Node runtime target with `make node`, then uploads each ABI runtime as a short-lived workflow artifact. A manual run without a prior run ID performs that build in the same workflow and packages the runtime for cloud-emulator tests. A manual run with a run ID verifies that run's x86_64 runtime job completed successfully before downloading its artifact. Runtime libraries are added only to the runner's temporary validation APK; the workflow does not upload that APK.
+The [Android cloud workflow](../../../../.github/workflows/android-cloud-validation.yml) builds the Node runtime with `make node`, then uploads each completed ABI runtime as a short-lived workflow artifact. Its Android compatibility patch disables V8's unsupported Android `execinfo` path, avoids guard-page assumptions in Android cctest, enables Android POSIX trap-handler sources in V8, and reads arm64 CPU capabilities through Android's `getauxval` headers rather than an unlinked NDK helper. The 16 KB Android 16 smoke reports the process exit code and linker log on failure. A manual run without a prior run ID performs the build in the same workflow and packages the runtime for cloud-emulator tests. A manual run with a run ID verifies that run's x86_64 runtime job completed successfully before downloading its artifact. Runtime libraries are added only to the runner's temporary validation APK; the workflow does not upload that APK.
 
 ## Alternatives considered
 
-**Keep the default make target.** It also builds Node's host-side test programs. The Android NDK build fails in an unrelated test source that refers to `aligned_alloc`, so those targets add failure without strengthening the runtime check.
+**Link the NDK CPU-features helper.** The Android zlib build references `android_getCpuFeatures`, but linking the NDK helper into Node's native targets would create another runtime library dependency. Reading the same arm64 capability bits through Android's `getauxval` interface avoids that dependency and matches the Linux arm64 implementation.
 
 **Require two workflow runs for every app-process check.** This preserves reusable runtime artifacts but makes the ordinary validation path depend on a separate run and a manually copied run ID. The optional run ID keeps reuse available while allowing one-run build-to-emulator validation.
 
 ## Consequences
 
-The hosted build still compiles each requested ABI from Node source and can take a long time; the workflow retains its bounded job timeout. The artifact proves that the Android Node binary ran under the app UID. It does not prove that DSH starts, that desktop features work on Android, or that the distributed Android app contains DSH.
+The hosted build still compiles each requested ABI from Node source and can take a long time; the workflow retains its bounded job timeout. The runtime artifact proves that the requested Node binary passed its build and alignment checks; app-process instrumentation separately verifies it under the Android app UID. It does not prove that DSH starts, that desktop features work on Android, or that the distributed Android app contains DSH.
 
 ## Verification
 

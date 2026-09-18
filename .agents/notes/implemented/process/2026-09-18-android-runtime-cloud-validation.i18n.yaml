@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-18-android-runtime-cloud-validation.md
-2026-09-18-android-runtime-cloud-validation.md: 8a461aad89b35fccb9fa6462258f81adc9775612
-2026-09-18-android-runtime-cloud-validation.zh.md: 1161f746161cb5ccd2a88edcc275b118323b06e8
+2026-09-18-android-runtime-cloud-validation.md: 9110665b1585248561507233c7ed0d3fba5e8654
+2026-09-18-android-runtime-cloud-validation.zh.md: d17c0ba5fe9c366f33c0c105297638aa3d982117

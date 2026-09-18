@@ -68,7 +68,7 @@ jobs:
 
       - name: Apply Android V8 compatibility patch
         shell: bash
-        run: patch --directory "$RUNNER_TEMP/node-v22.19.0" --strip=1 < apps/android/patches/node-v22.19.0-android-no-execinfo.patch
+        run: patch --directory "$RUNNER_TEMP/node-v22.19.0" --strip=1 < apps/android/patches/node-v22.19.0-android-compat.patch
 
       - name: Cross-build Node.js for Android
         shell: bash
@@ -117,11 +117,18 @@ jobs:
           arch: x86_64
           profile: pixel_7_pro
           disable-animations: true
-          script: >-
-            adb push "$RUNNER_TEMP/node-v22.19.0/out/Release/node" /data/local/tmp/clawmaster-node &&
-            adb push "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so" /data/local/tmp/libc++_shared.so &&
-            adb push apps/android/scripts/node-runtime-smoke.cjs /data/local/tmp/node-runtime-smoke.cjs &&
-            adb shell 'LD_LIBRARY_PATH=/data/local/tmp /system/bin/linker64 /data/local/tmp/clawmaster-node /data/local/tmp/node-runtime-smoke.cjs'
+          script: |
+            set -eu
+            adb push "$RUNNER_TEMP/node-v22.19.0/out/Release/node" /data/local/tmp/clawmaster-node
+            adb push "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so" /data/local/tmp/libc++_shared.so
+            adb push apps/android/scripts/node-runtime-smoke.cjs /data/local/tmp/node-runtime-smoke.cjs
+            if adb shell 'LD_LIBRARY_PATH=/data/local/tmp /system/bin/linker64 /data/local/tmp/clawmaster-node /data/local/tmp/node-runtime-smoke.cjs; node_status=$?; echo NODE_STATUS=$node_status; exit $node_status'; then
+              exit 0
+            else
+              node_status=$?
+              adb logcat -d -s linker:W libc:F
+              exit "$node_status"
+            fi
 
       - name: Upload experimental Android Node runtime
         if: always() && hashFiles('node-runtime-*/*') != ''
