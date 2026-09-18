@@ -89,6 +89,9 @@ $report = [ordered]@{
 
 $installRoot = Join-Path $env:RUNNER_TEMP ('clawmaster-clean-host-' + [guid]::NewGuid().ToString('N'))
 $dshHome = Join-Path $env:RUNNER_TEMP ('clawmaster-clean-home-' + [guid]::NewGuid().ToString('N'))
+# The app uses the isolated home under appDataRoot when no existing harness
+# home is found (the custom $dshHome above is empty and has no markers).
+$isolatedDshHome = Join-Path $appDataRoot 'dsh-home'
 $desktop = $null
 
 try {
@@ -149,7 +152,12 @@ try {
                 $report['windowHeight'] = $rect.Bottom - $rect.Top
             }
         }
+        # Check both the custom DSH_HOME and the isolated home the app
+        # falls back to when no existing harness home is found.
         $runtimePath = Join-Path $dshHome 'desktop\current-runtime.json'
+        if (-not (Test-Path -LiteralPath $runtimePath -PathType Leaf)) {
+            $runtimePath = Join-Path $isolatedDshHome 'desktop\current-runtime.json'
+        }
         if (Test-Path -LiteralPath $runtimePath -PathType Leaf) {
             $runtime = Get-Content -LiteralPath $runtimePath -Raw | ConvertFrom-Json
             $report['runtimeStatus'] = $runtime.status
@@ -159,6 +167,7 @@ try {
 
     $report['windowSeen'] = $windowSeen
     $report['ready'] = ($null -ne $readyAt)
+    $report['dshHomeUsed'] = $runtimePath
     if ($null -ne $readyAt) { $report['secondsToReady'] = [math]::Round(($readyAt - [int64]$report['startedAtUnixMs']) / 1000, 1) }
     $report['waitedSeconds'] = $waited / 1000
 
