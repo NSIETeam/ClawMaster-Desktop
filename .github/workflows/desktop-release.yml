@@ -152,6 +152,11 @@ jobs:
 
       - name: Verify fresh production installation and Host restart
         shell: bash
+        env:
+          # MSYS `cp` dereferences symlinks by default, and the installed core's
+          # virtual-store links are load-bearing (circular pairs explode when
+          # followed). nativestrict makes the copy create real links on Windows.
+          MSYS: winsymlinks:nativestrict
         run: |
           smokeRoot="$(mktemp -d "$RUNNER_TEMP/clawmaster-production-XXXXXX")"
           # Link-preserving copy: the installed core's virtual-store symlinks
@@ -159,6 +164,14 @@ jobs:
           # mktemp pre-creates the directory, so the payload lands INSIDE it.
           cp -R apps/desktop-tauri/bundled/harness "$smokeRoot/harness"
           trap 'rm -rf "$smokeRoot"' EXIT
+          # A dereferenced or partial copy silently loses the links the core
+          # needs to resolve, so fail here rather than in a confusing boot error.
+          sourceLinks="$(find apps/desktop-tauri/bundled/harness -type l | wc -l | tr -d ' ')"
+          copiedLinks="$(find "$smokeRoot/harness" -type l | wc -l | tr -d ' ')"
+          if [ "$sourceLinks" != "$copiedLinks" ]; then
+            echo "::error::smoke copy lost symlinks: payload=$sourceLinks copy=$copiedLinks"
+            exit 1
+          fi
           cd "$smokeRoot/harness"
           pnpm install --prod --frozen-lockfile
           cd "$GITHUB_WORKSPACE"
