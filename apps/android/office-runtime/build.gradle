@@ -1,0 +1,75 @@
+import java.security.MessageDigest
+
+plugins {
+    id 'java-library'
+    id 'com.gradleup.shadow' version '8.3.6'
+}
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+def upstreamCommit = 'a29c7a4cdd94175c2be43678c82afc818b60ff3f'
+def upstreamArchive = layout.buildDirectory.file('upstream.zip')
+tasks.register('prepareCompatibility') {
+    outputs.dir(layout.buildDirectory.dir('compatibility'))
+    doLast {
+        def archive = upstreamArchive.get().asFile
+        archive.parentFile.mkdirs()
+        if (!archive.exists()) {
+            new URL("https://codeload.github.com/centic9/poi-on-android/zip/${upstreamCommit}").withInputStream { input ->
+                archive.withOutputStream { it << input }
+            }
+        }
+        def digest = MessageDigest.getInstance('SHA-256').digest(archive.bytes).encodeHex().toString()
+        if (digest != 'cd5f327a614d32eff919d9843b4fb5177747682e9118894d3ffbbe35f267a785') {
+            throw new GradleException('Office compatibility source checksum mismatch')
+        }
+        copy {
+            from zipTree(archive)
+            include "*/poishadow/src/main/java/**", "*/LICENSE.md"
+            into layout.buildDirectory.dir('compatibility')
+        }
+    }
+}
+sourceSets.main.java.srcDir(layout.buildDirectory.dir("compatibility/poi-on-android-${upstreamCommit}/poishadow/src/main/java"))
+compileJava.dependsOn 'prepareCompatibility'
+dependencies {
+    implementation 'org.apache.poi:poi-ooxml:5.5.1'
+    implementation 'com.fasterxml:aalto-xml:1.3.3'
+    implementation 'stax:stax-api:1.0.1'
+}
+shadowJar {
+    inputs.file(project.buildFile)
+    archiveClassifier = 'all'
+    mergeServiceFiles()
+    exclude 'META-INF/versions/**', 'module-info.class', 'repackage/**'
+    // Digital signing and timestamp HTTP clients are not part of the mobile document tools.
+    exclude 'org/apache/poi/poifs/crypt/dsig/**'
+    exclude 'META-INF/services/javax.xml.stream.*'
+    relocate 'javax.xml.namespace', 'org.apache.poi.javax.xml.namespace'
+    relocate 'javax.xml.stream', 'org.apache.poi.javax.xml.stream'
+    relocate 'javax.xml.XMLConstants', 'org.apache.poi.javax.xml.XMLConstants'
+    ['font.FontRenderContext', 'font.TextLayout', 'geom.AffineTransform', 'geom.Dimension2D',
+     'image.BufferedImage', 'Color', 'Dimension'].each { name ->
+        relocate "java.awt.${name}", "org.apache.poi.java.awt.${name}"
+    }
+    ['ImageIO', 'ImageReader', 'stream.ImageInputStream', 'metadata.IIOMetadata'].each { name ->
+        relocate "javax.imageio.${name}", "org.apache.poi.javax.imageio.${name}"
+    }
+    from(layout.buildDirectory.file("compatibility/poi-on-android-${upstreamCommit}/LICENSE.md")) {
+        into 'META-INF'; rename { 'LICENSE-poi-on-android.md' }
+    }
+}
+configurations { androidRuntime }
+tasks.register('verifyOfficeRuntime') {
+    dependsOn tasks.named('shadowJar')
+    inputs.file(tasks.named('shadowJar').flatMap { it.archiveFile })
+    doLast {
+        new java.util.zip.ZipFile(tasks.named('shadowJar').get().archiveFile.get().asFile).withCloseable { zip ->
+            if (zip.entries().toList().any { it.name.startsWith('org/apache/poi/poifs/crypt/dsig/') }) {
+                throw new GradleException('Unsupported document-signing HTTP clients entered the mobile runtime')
+            }
+        }
+    }
+}
+artifacts { androidRuntime(tasks.named('shadowJar')) { builtBy(tasks.named('verifyOfficeRuntime')) } }

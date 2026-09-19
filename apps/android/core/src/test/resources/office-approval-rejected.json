@@ -1,0 +1,36 @@
+{
+  "prompt": "Create a report for review",
+  "modelReplies": [
+    {
+      "role": "assistant",
+      "content": "Review this document creation.",
+      "tool_calls": [{
+        "id": "office-reviewed-1",
+        "type": "function",
+        "function": {
+          "name": "documents_create",
+          "arguments": "{\"name\":\"Report\",\"format\":\"docx\",\"content\":\"Synthetic report\"}"
+        }
+      }]
+    },
+    {"role": "assistant", "content": "The write was rejected. No document was created."}
+  ],
+  "expectedMessages": [
+    {"role": "user", "content": "Create a report for review"},
+    {
+      "role": "assistant",
+      "content": "Review this document creation.",
+      "tool_calls": [{
+        "id": "office-reviewed-1",
+        "type": "function",
+        "function": {
+          "name": "documents_create",
+          "arguments": "{\"name\":\"Report\",\"format\":\"docx\",\"content\":\"Synthetic report\"}"
+        }
+      }]
+    },
+    {"role": "tool", "tool_call_id": "office-reviewed-1", "content": "{\"error\":\"user_rejected\"}"},
+    {"role": "assistant", "content": "The write was rejected. No document was created."}
+  ],
+  "expectedToolNames": ["notes_search", "notes_read", "notes_write", "documents_list", "documents_read", "documents_create", "documents_edit"]
+}

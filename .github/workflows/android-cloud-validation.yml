@@ -1,0 +1,190 @@
+name: Android Cloud Validation
+
+on:
+  pull_request:
+    paths:
+      - "apps/android/**"
+      - ".github/workflows/android-cloud-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-cloud-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node-runtime:
+    name: Android Node runtime (${{ matrix.arch }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Guard the production Node build target
+        run: node --test apps/android/scripts/android-node-build-workflow.test.mjs
+
+      - name: Install Android NDK
+        shell: bash
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358"
+
+      - name: Fetch checksum-pinned Node.js source
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 \
+            https://nodejs.org/dist/v22.19.0/node-v22.19.0.tar.xz \
+            --output "$RUNNER_TEMP/node-v22.19.0.tar.xz"
+          echo '0272acfce50ce9ad060288321b1092719a7f19966f81419835410c59c09daa46  '"$RUNNER_TEMP/node-v22.19.0.tar.xz" | sha256sum --check
+          tar -xJf "$RUNNER_TEMP/node-v22.19.0.tar.xz" -C "$RUNNER_TEMP"
+
+      - name: Apply Android V8 compatibility patch
+        shell: bash
+        run: patch --directory "$RUNNER_TEMP/node-v22.19.0" --strip=1 < apps/android/patches/node-v22.19.0-android-no-execinfo.patch
+
+      - name: Cross-build Node.js for Android
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/node-v22.19.0"
+          export CC_host=gcc CXX_host=g++ AR_host=gcc-ar
+          ./android-configure "$ANDROID_HOME/ndk/28.2.13676358" 26 "${{ matrix.arch }}"
+          make -C out BUILDTYPE=Release V=0 node -j"$(nproc)"
+
+      - name: Verify Android ELF alignment and collect runtime files
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk="$ANDROID_HOME/ndk/28.2.13676358"
+          node="$RUNNER_TEMP/node-v22.19.0/out/Release/node"
+          case "${{ matrix.arch }}" in
+            arm64) libcxx="$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" ;;
+            x86_64) libcxx="$ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so" ;;
+          esac
+          test -x "$node"
+          test -s "$libcxx"
+          llvm_readelf="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          "$llvm_readelf" -lW "$node" | tee node-program-headers.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          headers = Path('node-program-headers.txt').read_text().splitlines()
+          loads = [line.split()[-1] for line in headers if line.lstrip().startswith('LOAD ')]
+          if not loads:
+              raise SystemExit('Node executable has no LOAD segments')
+          alignment = [int(value, 0) for value in loads]
+          if any(value < 16384 for value in alignment):
+              raise SystemExit(f'Node executable is not 16 KB aligned: {alignment}')
+          PY
+          mkdir -p "node-runtime-${{ matrix.arch }}"
+          cp "$node" "node-runtime-${{ matrix.arch }}/node"
+          cp "$libcxx" "node-runtime-${{ matrix.arch }}/libc++_shared.so"
+          cp node-program-headers.txt "node-runtime-${{ matrix.arch }}/"
+          (cd "node-runtime-${{ matrix.arch }}" && sha256sum node libc++_shared.so > SHA256SUMS.txt)
+
+      - name: Run Node.js on a 16 KB Android 16 emulator
+        if: matrix.arch == 'x86_64'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 36
+          target: google_apis_ps16k
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          script: >-
+            adb push "$RUNNER_TEMP/node-v22.19.0/out/Release/node" /data/local/tmp/clawmaster-node &&
+            adb push "$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/x86_64-linux-android/libc++_shared.so" /data/local/tmp/libc++_shared.so &&
+            adb push apps/android/scripts/node-runtime-smoke.cjs /data/local/tmp/node-runtime-smoke.cjs &&
+            adb shell 'LD_LIBRARY_PATH=/data/local/tmp /system/bin/linker64 /data/local/tmp/clawmaster-node /data/local/tmp/node-runtime-smoke.cjs'
+
+      - name: Upload experimental Android Node runtime
+        if: always() && hashFiles('node-runtime-*/*') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: clawmaster-node-android-${{ matrix.arch }}-${{ github.sha }}
+          path: node-runtime-${{ matrix.arch }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    name: Android ${{ matrix.api-level }} emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [26, 36]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.13"
+          cache-provider: basic
+
+      - name: Create disposable validation signing key
+        shell: bash
+        run: |
+          key="$RUNNER_TEMP/android-validation.jks"
+          keytool -genkeypair -v -keystore "$key" -storepass validation-only -keypass validation-only \
+            -alias clawmaster -keyalg RSA -keysize 2048 -validity 2 \
+            -dname "CN=ClawMaster CI Validation, OU=Temporary, O=ClawMaster, C=CN"
+          echo "ANDROID_KEYSTORE_PATH=$key" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=validation-only" >> "$GITHUB_ENV"
+
+      - name: Run core tests, lint, and release build
+        run: gradle -p apps/android :core:test :app:lintRelease :app:assembleRelease
+
+      - name: Verify APK signature and record checksum
+        shell: bash
+        run: |
+          apk=apps/android/app/build/outputs/apk/release/app-release.apk
+          test -s "$apk"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk" | tee android-signature.txt
+          sha256sum "$apk" | tee android-sha256.txt
+          mkdir -p android-validation-artifact
+          cp "$apk" android-validation-artifact/clawmaster-android-validation.apk
+          cp android-signature.txt android-sha256.txt android-validation-artifact/
+
+      - name: Enable hardware-accelerated Android emulation
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Exercise the release app on a cloud emulator
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          script: >-
+            gradle -p apps/android :app:connectedReleaseAndroidTest
+            -Pandroid.testInstrumentationRunnerArguments.class=team.nsi.clawmaster.android.StandaloneAgentTest,team.nsi.clawmaster.android.WorkspaceAgentTest
+
+      - name: Upload validation artifact and evidence
+        if: always() && hashFiles('android-validation-artifact/**') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: clawmaster-android-cloud-validation-api-${{ matrix.api-level }}-${{ github.sha }}
+          path: android-validation-artifact/
+          if-no-files-found: error
+          retention-days: 7

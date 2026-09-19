@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="prompt" type="id" />
+    <item name="send" type="id" />
+    <item name="messages" type="id" />
+    <item name="status" type="id" />
+    <item name="tab_chat" type="id" />
+    <item name="tab_notes" type="id" />
+    <item name="tab_settings" type="id" />
+    <item name="base_url" type="id" />
+    <item name="model_id" type="id" />
+    <item name="api_key" type="id" />
+    <item name="save_settings" type="id" />
+    <item name="tab_files" type="id" />
+    <item name="tab_tasks" type="id" />
+</resources>

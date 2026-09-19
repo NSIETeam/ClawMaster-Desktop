@@ -1,0 +1,12 @@
+plugins { id "java-library" }
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+dependencies {
+    api project(path: ':office-runtime', configuration: 'androidRuntime')
+    compileOnly "org.json:json:20250517"
+    testImplementation "org.json:json:20250517"
+    testImplementation "junit:junit:4.13.2"
+}
+test { testLogging { events "passed", "skipped", "failed" } }
