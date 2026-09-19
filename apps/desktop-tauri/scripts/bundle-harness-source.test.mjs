@@ -264,7 +264,10 @@ test('the shipped core never carries the external subagent SDKs', () => {
       writeFileSync(join(modules, name, 'index.js'), `package ${name}\n`)
     }
     const platformKey = `${process.platform}-${process.arch}`
-    for (const prebuild of [platformKey, 'linux-x64', 'win32-x64']) {
+    // Name the other platforms relative to the build target: the target's own
+    // prebuild must survive on whichever platform runs this suite.
+    const otherPlatforms = ['darwin-arm64', 'linux-x64', 'win32-x64'].filter(key => key !== platformKey)
+    for (const prebuild of [platformKey, ...otherPlatforms]) {
       mkdirSync(join(modules, 'node-pty', 'prebuilds', prebuild), { recursive: true })
       writeFileSync(join(modules, 'node-pty', 'prebuilds', prebuild, 'pty.node'), prebuild)
     }
@@ -276,7 +279,7 @@ test('the shipped core never carries the external subagent SDKs', () => {
     // layer and the build target's own prebuild must survive.
     assert.equal(existsSync(join(modules, '@earendil-works', 'pi-ai', 'index.js')), true)
     assert.equal(existsSync(join(modules, 'node-pty', 'prebuilds', platformKey, 'pty.node')), true)
-    for (const prebuild of ['linux-x64', 'win32-x64']) {
+    for (const prebuild of otherPlatforms) {
       assert.equal(existsSync(join(modules, 'node-pty', 'prebuilds', prebuild)), false)
     }
   } finally { rmSync(root, { recursive: true, force: true }) }
