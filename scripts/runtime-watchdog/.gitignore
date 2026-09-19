@@ -1,0 +1,16 @@
+# 机器专属 / 运行时生成物 —— 绝不入库
+#
+# core-manifest.sha256 是「某台机器某个时刻」的全树哈希基线，8 MB；
+# 每台机器必须在 freeze 之后自己生成（doctor.sh --build-manifest）。
+# 把它提交进仓库会让"基线"变成别人机器的快照，比没有基线更危险。
+core-manifest.sha256
+baseline.tsv
+
+# 测试 / 演习留下的临时目录与残留
+.fixture/
+.fixture-doctor/
+.fixture-repair/
+.drill/
+.probe/
+.dbg/
+*.tmp
