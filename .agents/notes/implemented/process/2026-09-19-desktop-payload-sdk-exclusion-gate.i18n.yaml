@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-19-desktop-payload-sdk-exclusion-gate.md
-2026-09-19-desktop-payload-sdk-exclusion-gate.md: 5fe2d308d6a107b3354ce04356ca711cbfda1fb3
-2026-09-19-desktop-payload-sdk-exclusion-gate.zh.md: d56085476f69974e22aa4755594defb1d72d77aa
+2026-09-19-desktop-payload-sdk-exclusion-gate.md: a5b79ae77fdb5899e2da4aca4cb242a7aa37e41a
+2026-09-19-desktop-payload-sdk-exclusion-gate.zh.md: 37d726857a8dade3b936a65de4e12bb28786e74e

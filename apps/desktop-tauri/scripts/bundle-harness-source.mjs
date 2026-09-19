@@ -428,8 +428,11 @@ function installBundledCore(root) {
   const failed = result.error !== undefined || result.status !== 0
   const installed = existsSync(join(root, 'node_modules', '.modules.yaml'))
   if (installed) {
-    materializeSymlinks(root)
+    // Pruning removes packages that `node_modules/.bin` shims point at, so it
+    // must run before the dangling-link sweep or those shims survive as broken
+    // links and the Tauri resource walk rejects the payload directory.
     pruneInstalledCore(root)
+    materializeSymlinks(root)
   }
   if (!failed && !installed) {
     console.warn('bundle-harness-source: install finished without pnpm completion markers')

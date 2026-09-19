@@ -27,6 +27,8 @@ Both product providers load their runtime as a hard module-level dependency, so 
 | `@deepseek-ai/dsh-subagent-claude-code` | `import … from '@anthropic-ai/claude-agent-sdk'` in `src/process.ts` and `src/run.ts` |
 | `@deepseek-ai/dsh-subagent-codex` | `createRequire(import.meta.url).resolve('@openai/codex/package.json')` at module top level in `src/run.ts` |
 
+Pruning runs before the dangling-symlink sweep in `installBundledCore`. Pruning deletes packages that `node_modules/.bin` shims point at, so sweeping first leaves those shims dangling and the Tauri resource walk refuses the whole payload directory (`resource path ../bundled/harness/node_modules/.bin/tsserver doesn't exist`), which failed every desktop release build. Reversing the two calls is what lets a payload that excludes `typescript` bundle at all.
+
 Pruning is therefore safe exactly while no desktop bundle mounts either provider. `DESKTOP_BUNDLES` in `scripts/desktop-defaults.mjs` mounts neither, which matches the production-exclusion decision above; the added test asserts that coupling directly, so adding a product provider to the desktop bundle list without restoring its runtime fails the suite instead of shipping an installer whose profile cannot start.
 
 ## Consequences

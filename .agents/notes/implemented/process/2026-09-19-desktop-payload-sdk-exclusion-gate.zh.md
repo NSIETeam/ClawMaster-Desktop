@@ -27,6 +27,8 @@ Status: implemented
 | `@deepseek-ai/dsh-subagent-claude-code` | `src/process.ts` 与 `src/run.ts` 中的 `import … from '@anthropic-ai/claude-agent-sdk'` |
 | `@deepseek-ai/dsh-subagent-codex` | `src/run.ts` 模块顶层的 `createRequire(import.meta.url).resolve('@openai/codex/package.json')` |
 
+裁剪先于 `installBundledCore` 中悬挂符号链接的清扫执行。裁剪会删除 `node_modules/.bin` 垫片所指向的包，因此先清扫会把这些垫片留成悬挂链接，而 Tauri 的资源遍历会拒绝整个载荷目录（`resource path ../bundled/harness/node_modules/.bin/tsserver doesn't exist`），此前每一次桌面发布构建都因此失败。调换这两次调用，才让一个排除了 `typescript` 的载荷能够被打包。
+
 因此，只有当没有任何桌面 Bundle 挂载这两个提供方时，裁剪才是安全的。`scripts/desktop-defaults.mjs` 中的 `DESKTOP_BUNDLES` 一个都不挂载，这与上面的生产安装排除决策一致；新增的测试直接断言这一耦合，因此在未恢复其运行时的前提下把产品提供方加入桌面 Bundle 列表会直接让测试套件失败，而不是交付一个 Profile 无法启动的安装包。
 
 ## 后果
