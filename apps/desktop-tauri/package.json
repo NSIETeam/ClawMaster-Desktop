@@ -2,7 +2,7 @@
   "name": "@deepseek-ai/dsh-desktop-tauri",
   "productName": "ClawMaster",
   "description": "ClawMaster Tauri shell powered by the DSH runtime",
-  "version": "0.2.2",
+  "version": "0.2.3-fix",
   "private": true,
   "license": "MIT",
   "type": "module",
