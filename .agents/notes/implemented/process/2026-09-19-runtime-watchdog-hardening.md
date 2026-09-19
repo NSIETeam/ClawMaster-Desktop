@@ -2,9 +2,7 @@
 
 Status: implemented
 
-English | 中文 (pending)
-
-> The Chinese pair is not written yet. `dsh-translate-docs` may only be run on explicit user invocation, so it was left out of this branch rather than written by hand.
+English | [中文](2026-09-19-runtime-watchdog-hardening.zh.md)
 
 ## Problem
 
@@ -47,7 +45,15 @@ The detection path reads a hash baseline; the repair path reads a tarball snapsh
 
 `com.clawmaster.openviking` crash-loops under `KeepAlive` because `~/.dsh/.credentials.yaml` no longer exists. The watchdog reports the loop, the recorded error, and the exact commands to stop or restore it, and stops there. Disabling another actor's service is not a decision a repair tool should take.
 
-## Rejected alternatives
+## Consequences
+
+The tooling adds no dependency to `packages/`, `apps/`, or any published surface, and the core tree is unchanged by it: the snapshot, the hash baseline, and the heartbeat are generated per machine and excluded from the repository, so a fresh clone runs the watchdog without them and `doctor.sh` reports each absent artefact rather than failing.
+
+The guarantee is bounded and stated as such. Detection plus restoration produces a clean next start; it does not make a running process immutable, and a process that has already loaded a modified module keeps executing it until the Host restarts. The `--quick` repair path also has a proven blind spot — a file whose mtime was backdated and whose read-only bit was restored is not detected — which the periodic `--deep` pass closes rather than the fast path.
+
+One operational decision is left open by design: `com.clawmaster.openviking` stays in its crash loop until a human stops it, so the loop keeps producing log growth and restart load that the watchdog reports but does not remove.
+
+## Alternatives considered
 
 - **File permissions as immutability.** `chmod -R a-w` raises the bar and nothing more: a same-user process can restore the write bit. The measured limit is detection and restoration of the next start, not a guarantee about a running process. Process isolation (a separate user, or a read-only mount) is the mechanism that would close it, and it is not reachable from outside the application.
 - **Polling instead of event-driven repair.** The desktop app's own retry after a crash was measured at 9.6 s to 20982 s. The repair loop is woken by `WatchPaths` on `boot.log` instead, which fires in one to four seconds.
