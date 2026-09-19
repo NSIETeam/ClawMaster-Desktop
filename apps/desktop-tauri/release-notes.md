@@ -1,4 +1,4 @@
-# ClawMaster Desktop 0.2.1
+# ClawMaster Desktop 0.2.2-fix
 
 ## 中文
 
