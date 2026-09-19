@@ -26,6 +26,7 @@ env:
   NODE_VERSION: '24'
   DSH_TELEMETRY_DISABLED: '1'
   DSH_DESKTOP_BUILD_MODE: release
+  DSH_REQUIRE_FULL_CORE: '1'
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
@@ -133,6 +134,17 @@ jobs:
           npm test --prefix frontends/notes
           npm run typecheck --prefix frontends/notes
           pnpm run test:notes-client
+
+      # Stage the per-platform runtime the installer ships so first boot needs
+      # no network: the bundled core runs in place with this Node and pnpm.
+      - name: Stage bundled Node/pnpm runtime
+        run: |
+          $rt = "apps/desktop-tauri/bundled/runtime"
+          New-Item -ItemType Directory -Force "$rt/pnpm" | Out-Null
+          npm install --prefix "$rt/.pnpm-tmp" pnpm@11.7.0 --no-audit --no-fund --loglevel=error
+          Copy-Item "$rt/.pnpm-tmp/node_modules/pnpm/bin/pnpm.cjs" "$rt/pnpm/pnpm.cjs"
+          Remove-Item -Recurse -Force "$rt/.pnpm-tmp"
+          Add-Content $env:GITHUB_ENV "DSH_PNPM_CJS=$((Resolve-Path "$rt/pnpm/pnpm.cjs").Path)"
 
       - name: Build ClawMaster harness
         run: |

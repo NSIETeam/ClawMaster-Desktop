@@ -1,12 +1,16 @@
 /**
  * Bundle a trimmed harness monorepo slice for the Tauri installer.
  *
- * Ships source + pre-built lib/dist artifacts, never node_modules.
- * First-run provisioning runs `pnpm install --prod` against this tree.
+ * Ships source + pre-built lib/dist artifacts. When the full-core install
+ * succeeds (default), the payload also carries its production node_modules
+ * (hoisted, symlink-free) plus a staged Node/pnpm runtime, so the installer
+ * runs fully offline and the provisioner executes the core in place. When the
+ * install is skipped or fails non-strictly, the payload stays source-only and
+ * first-run provisioning falls back to `pnpm install --prod` against it.
  */
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
-import { copyFileSync, cpSync, existsSync, globSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, copyFileSync, cpSync, existsSync, globSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { load as loadYaml } from 'js-yaml'
@@ -353,6 +357,110 @@ export function stripDevDependencies(root) {
   }
 }
 
+/**
+ * Install the bundle's production dependencies in place so the installer runs
+ * fully offline. The hoisted node-linker keeps the packaged tree symlink-free,
+ * which NSIS/DMG/DEB resource copying requires. Skipped entirely when
+ * DSH_BUNDLE_FULL_CORE=0. Failure removes node_modules again and is fatal only
+ * when DSH_REQUIRE_FULL_CORE=1; otherwise the payload stays source-only and
+ * first-run provisioning falls back to its online install path.
+ * @param {string} root - Prepared harness workspace.
+ * @returns {void}
+ */
+function installBundledCore(root) {
+  if (process.env.DSH_BUNDLE_FULL_CORE === '0') {
+    console.log('bundle-harness-source: full-core install disabled (DSH_BUNDLE_FULL_CORE=0)')
+    return
+  }
+  const strict = process.env.DSH_REQUIRE_FULL_CORE === '1'
+  const pnpmBin = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+  console.log('bundle-harness-source: installing bundled core dependencies (pnpm install --prod, hoisted)')
+  const result = spawnSync(pnpmBin, ['install', '--prod', '--no-frozen-lockfile', '--config.node-linker=hoisted'], {
+    cwd: root,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+  })
+  const failed = result.error !== undefined || result.status !== 0
+  const installed = existsSync(join(root, 'node_modules', '.modules.yaml'))
+  if (!failed && !installed) {
+    console.warn('bundle-harness-source: install finished without pnpm completion markers')
+  }
+  if (failed || !installed) {
+    const detail = result.error !== undefined ? String(result.error) : `exit ${result.status}`
+    rmSync(join(root, 'node_modules'), { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
+    if (strict) throw new Error(`bundled core dependency install failed: ${detail}`)
+    console.warn(`bundle-harness-source: full-core install failed (${detail}); shipping source-only payload`)
+    return
+  }
+  console.log('bundle-harness-source: bundled core dependencies installed')
+}
+
+/**
+ * Remove debug-only payload weight (sourcemaps, tsbuildinfo, caches). None of
+ * it is consulted at runtime; verification hashes are computed before pruning.
+ * @param {string} root - Bundled harness workspace, installed or source-only.
+ * @returns {void}
+ */
+function pruneBundledTree(root) {
+  let files = 0
+  let bytes = 0
+  const walk = dir => {
+    let entries
+    try {
+      entries = readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const path = join(dir, entry.name)
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        if (entry.name === '.cache') {
+          rmSync(path, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 })
+          continue
+        }
+        walk(path)
+        continue
+      }
+      if (/\.(?:map|tsbuildinfo)$/u.test(entry.name)) {
+        bytes += statSync(path).size
+        files += 1
+        rmSync(path, { force: true })
+      }
+    }
+  }
+  walk(root)
+  console.log(`bundle-harness-source: pruned ${files} map/tsbuildinfo files (${(bytes / 1048576).toFixed(1)} MiB) and .cache directories`)
+}
+
+/**
+ * Stage the per-platform runtime next to the harness payload: the Node binary
+ * running this script (setup-node's official build is self-contained) and, if
+ * DSH_PNPM_CJS points at one, the pnpm entry the provisioner wires into the
+ * path bridge for offline `dsh plugin` support.
+ * @returns {void}
+ */
+function stageBundledRuntime() {
+  const runtimeRoot = join(desktopRoot, 'bundled', 'runtime')
+  const nodeDir = join(runtimeRoot, 'node')
+  // Mirror the provisioner's node_binary_path layout: node.exe at the root on
+  // Windows, bin/node elsewhere.
+  const nodeDest = process.platform === 'win32'
+    ? join(nodeDir, 'node.exe')
+    : join(nodeDir, 'bin', 'node')
+  mkdirSync(dirname(nodeDest), { recursive: true })
+  copyFileSync(process.execPath, nodeDest)
+  if (process.platform !== 'win32') chmodSync(nodeDest, 0o755)
+  let pnpmStaged = false
+  const pnpmCjs = process.env.DSH_PNPM_CJS
+  if (pnpmCjs && existsSync(pnpmCjs)) {
+    mkdirSync(join(runtimeRoot, 'pnpm'), { recursive: true })
+    copyFileSync(pnpmCjs, join(runtimeRoot, 'pnpm', 'pnpm.cjs'))
+    pnpmStaged = true
+  }
+  console.log(`bundle-harness-source: staged runtime node=${nodeDest} pnpm=${pnpmStaged ? 'bundled' : 'not bundled'}`)
+}
+
 function main() {
 assertBuiltArtifacts()
 const buildProvenance = verifyPreparedBuild(repoRoot)
@@ -436,6 +544,10 @@ const manifest = {
 writeFileSync(join(outRoot, '.bundle-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`)
 assertPreparedBundle(outRoot)
 verifyPreparedBuild(repoRoot)
+
+installBundledCore(outRoot)
+pruneBundledTree(outRoot)
+stageBundledRuntime()
 
 console.log(`bundle-harness-source: wrote ${outRoot}`)
 console.log(`bundle-harness-source: sha256=${manifest.contentSha256}`)
