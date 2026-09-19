@@ -445,9 +445,9 @@ function installBundledCore(root) {
 }
 
 /**
- * Product decisions for the shipped core's dependency footprint. None of
- * these packages is referenced by a static import anywhere in the shipped
- * lib/dist trees (verified per release):
+ * Dependency packages removed from the shipped core's node_modules. None of
+ * them is referenced by a static import anywhere in the shipped lib/dist
+ * trees (verified per release):
  *
  * - @openai/codex and @anthropic-ai/claude-agent-sdk — external subagent
  *   backends the product does not ship; the product's in-process subagent
@@ -455,30 +455,39 @@ function installBundledCore(root) {
  * - mermaid/@mermaid-js/react-icons/typescript/es-toolkit/openai/@google/
  *   playwright-core/@opentelemetry — build-time or optional-integration
  *   weight; every consumer bundles or lazy-loads them.
- * - node-pty prebuilds for other platforms — each installer is
- *   platform-specific.
  *
  * Deliberately kept: @earendil-works/pi-ai (the LLM provider layer),
  * sherpa-onnx + @img (voice and image natives), pdf-lib, the office editor
  * runtime, and node-pty for the current platform.
+ *
+ * A released installer must not carry either external subagent SDK, so
+ * entries are added here only together with evidence that nothing in the
+ * payload imports them.
+ */
+export const PRUNED_DEPENDENCY_PACKAGES = Object.freeze([
+  '@openai',
+  '@anthropic-ai',
+  'mermaid',
+  '@mermaid-js',
+  'react-icons',
+  'typescript',
+  'es-toolkit',
+  'openai',
+  '@google',
+  'playwright-core',
+  '@opentelemetry',
+])
+
+/**
+ * Delete {@link PRUNED_DEPENDENCY_PACKAGES} from an installed core and drop
+ * node-pty prebuilds for other platforms. Missing entries are tolerated: a
+ * pruned scope may be absent because the workspace never depended on it.
  * @param {string} root - Installed harness workspace.
  * @returns {void}
  */
-function pruneInstalledCore(root) {
+export function pruneInstalledCore(root) {
   const modules = join(root, 'node_modules')
-  const prunedPackages = [
-    '@openai',
-    '@anthropic-ai',
-    'mermaid',
-    '@mermaid-js',
-    'react-icons',
-    'typescript',
-    'es-toolkit',
-    'openai',
-    '@google',
-    'playwright-core',
-    '@opentelemetry',
-  ]
+  const prunedPackages = PRUNED_DEPENDENCY_PACKAGES
   let bytes = 0
   for (const name of prunedPackages) {
     const path = join(modules, name)

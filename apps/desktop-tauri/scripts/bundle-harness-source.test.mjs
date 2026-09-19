@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
-import { assertDesktopLockfile, assertPreparedBundle, copyTree, stripDevDependencies, buildTrimmedWorkspaceYaml, DESKTOP_PATCHED_DEPENDENCIES, hashBundledContent, withDesktopDependencies, desktopWorkspaceOverrides } from './bundle-harness-source.mjs'
+import { assertDesktopLockfile, assertPreparedBundle, copyTree, stripDevDependencies, buildTrimmedWorkspaceYaml, DESKTOP_PATCHED_DEPENDENCIES, hashBundledContent, PRUNED_DEPENDENCY_PACKAGES, pruneInstalledCore, withDesktopDependencies, desktopWorkspaceOverrides } from './bundle-harness-source.mjs'
 import { DESKTOP_BUNDLES, DESKTOP_PLUGIN_VERSIONS, withDesktopBundles } from './desktop-defaults.mjs'
 
 test('workspace trimming preserves the immutable Office source manifest', () => {
@@ -247,3 +247,58 @@ test('desktop lock validation rejects drifted releases, patches and nested DSH c
     assert.throws(() => assertDesktopLockfile(JSON.stringify({ ...lock, packages: { '@deepseek-ai/dsh-session@0.1.5-rc.1': {} } }), root), /not registry copies/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+test('the shipped core never carries the external subagent SDKs', () => {
+  const root = mkdtempSync(join(tmpdir(), 'desktop-core-prune-'))
+  try {
+    const modules = join(root, 'node_modules')
+    const installed = [
+      '@openai/codex',
+      '@anthropic-ai/claude-agent-sdk',
+      'openai',
+      'mermaid',
+      '@earendil-works/pi-ai',
+    ]
+    for (const name of installed) {
+      mkdirSync(join(modules, name), { recursive: true })
+      writeFileSync(join(modules, name, 'index.js'), `package ${name}\n`)
+    }
+    const platformKey = `${process.platform}-${process.arch}`
+    for (const prebuild of [platformKey, 'linux-x64', 'win32-x64']) {
+      mkdirSync(join(modules, 'node-pty', 'prebuilds', prebuild), { recursive: true })
+      writeFileSync(join(modules, 'node-pty', 'prebuilds', prebuild, 'pty.node'), prebuild)
+    }
+    pruneInstalledCore(root)
+    for (const name of ['@openai', '@anthropic-ai', 'openai', 'mermaid']) {
+      assert.equal(existsSync(join(modules, name)), false, `${name} must not ship`)
+    }
+    // The keep-list is as load-bearing as the prune list: the LLM provider
+    // layer and the build target's own prebuild must survive.
+    assert.equal(existsSync(join(modules, '@earendil-works', 'pi-ai', 'index.js')), true)
+    assert.equal(existsSync(join(modules, 'node-pty', 'prebuilds', platformKey, 'pty.node')), true)
+    for (const prebuild of ['linux-x64', 'win32-x64']) {
+      assert.equal(existsSync(join(modules, 'node-pty', 'prebuilds', prebuild)), false)
+    }
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+test('the pruned scope list keeps both external subagent SDKs and the keep-list', () => {
+  for (const scope of ['@openai', '@anthropic-ai', 'openai']) {
+    assert.equal(PRUNED_DEPENDENCY_PACKAGES.includes(scope), true, `${scope} must stay pruned`)
+  }
+  // Deleting a kept scope from the prune list would ship a broken payload, and
+  // adding one here would silently drop a package the product imports.
+  for (const scope of ['@earendil-works', 'sherpa-onnx', '@img', 'pdf-lib', 'node-pty']) {
+    assert.equal(PRUNED_DEPENDENCY_PACKAGES.includes(scope), false, `${scope} must ship`)
+  }
+  // Pruning the product runtimes is safe only while no desktop bundle mounts
+  // their providers: the Claude provider imports the Agent SDK and the Codex
+  // provider resolves @openai/codex at module load, so a mounted provider whose
+  // runtime was pruned fails to start rather than reporting a missing backend.
+  for (const bundle of DESKTOP_BUNDLES) {
+    assert.equal(
+      bundle.includes('subagent-codex') || bundle.includes('subagent-claude-code'), false,
+      `${bundle} requires a product runtime the payload prunes`,
+    )
+  }
+})
