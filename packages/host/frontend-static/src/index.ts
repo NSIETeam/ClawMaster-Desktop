@@ -60,7 +60,7 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
 ])
 
 /** Restrict executable page resources to local assets and exact inline blocks. */
-function pageContentSecurityPolicy(html: string, styleNonce: string, scriptNonce: string): string {
+function pageContentSecurityPolicy(html: string, scriptNonce: string): string {
   const hashes = (tag: 'script' | 'style'): string[] => {
     const expression = tag === 'script'
       ? /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu
@@ -76,12 +76,11 @@ function pageContentSecurityPolicy(html: string, styleNonce: string, scriptNonce
     return [...values]
   }
   const scriptHashes = hashes('script')
-  const styleHashes = hashes('style')
   return [
     "default-src 'self'",
-    `script-src 'self' 'wasm-unsafe-eval' 'nonce-${scriptNonce}' ${scriptHashes.join(' ')}`.trim(),
+    `script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' 'nonce-${scriptNonce}' ${scriptHashes.join(' ')}`.trim(),
     'script-src-attr \'none\'',
-    `style-src 'self' 'nonce-${styleNonce}' ${styleHashes.join(' ')}`.trim(),
+    `style-src 'self' 'unsafe-inline'`.trim(),
     "style-src-attr 'unsafe-inline'",
     "connect-src 'self'",
     "img-src 'self' data: blob:",
@@ -133,7 +132,7 @@ export async function serveStatic(
       if (!head.test(body)) throw new Error('Rendered index must contain a head element for runtime nonces.')
       body = body.replace(head, open => `${open}<meta name="dsh-style-nonce" content="${styleNonce}"><meta name="dsh-script-nonce" content="${scriptNonce}">`)
       type = HTML_MIME
-      contentSecurityPolicy = pageContentSecurityPolicy(body, styleNonce, scriptNonce)
+      contentSecurityPolicy = pageContentSecurityPolicy(body, scriptNonce)
     } else {
       body = await readFile(target)
       type = MIME[extname(target)] ?? 'application/octet-stream'
