@@ -75,6 +75,13 @@ pub async fn ensure_runtime(
 
     let bundled = bundled_source.ok_or_else(|| i18n::t(Msg::BootMissingBundle).to_string())?;
 
+    // A complete offline core ships with its production dependencies and a
+    // staged runtime already inside the installer: run it in place and skip
+    // every network-touching provisioning step.
+    if bundled_core_bootable(&bundled) {
+        return bundled_core_runtime(&bundled, &progress);
+    }
+
     let runtime_root = app_data_root()?.join("runtime");
     let node_dir = runtime_root.join("node");
     let pnpm_home = runtime_root.join("pnpm-global");
@@ -114,6 +121,8 @@ pub async fn ensure_runtime(
         let node_binary = recorded_node_path(&manifest_path)
             .map(PathBuf::from)
             .unwrap_or(preferred_node);
+        freeze_harness_tree(&harness_root);
+        housekeeping(&dsh_home, &app_root);
         return Ok(RuntimePaths {
             node_binary,
             pnpm_binary: preferred_pnpm,
@@ -259,6 +268,8 @@ pub async fn ensure_runtime(
         boot_log::info(&format!("manifest write skipped: {error}"));
     }
     gc_harness_versions(&app_root, &dsh_home);
+    housekeeping(&dsh_home, &app_root);
+    freeze_harness_tree(&harness_root);
 
     progress(ProvisionEvent::Status(
         i18n::t(Msg::StatusRuntimeReady).into(),
@@ -474,6 +485,7 @@ fn install_completed(root: &Path) -> bool {
 pub fn invalidate_provisioned_tree(paths: &RuntimePaths) -> Result<(), String> {
     ensure_harness_disposable(&paths.harness_root, &paths.dsh_home)?;
     if paths.harness_root.exists() {
+        unfreeze_harness_tree(&paths.harness_root);
         fs::remove_dir_all(&paths.harness_root)
             .map_err(|e| recoverable_message("remove harness", &paths.harness_root, e))?;
         boot_log::info(&format!(
@@ -662,6 +674,9 @@ fn gc_harness_versions(app_root: &Path, dsh_home: &Path) {
                 return;
             }
         }
+        // A frozen stale core refuses deletion until its write bits are
+        // restored; unfreezing is best-effort so removal can then proceed.
+        unfreeze_harness_tree(stale);
         match fs::remove_dir_all(stale) {
             Ok(()) => boot_log::info(&format!("removed old harness {}", stale.display())),
             Err(error) => {
@@ -671,6 +686,338 @@ fn gc_harness_versions(app_root: &Path, dsh_home: &Path) {
                 ));
             }
         }
+    }
+}
+
+/// Markers deciding whether the bundled payload is a complete, previously
+/// installed harness tree: with its production dependencies present it can run
+/// in place with no network access at all.
+fn bundled_core_bootable(bundled: &Path) -> bool {
+    bundled
+        .join("apps")
+        .join("cli")
+        .join("lib")
+        .join("bin.js")
+        .is_file()
+        && bundled.join("node_modules").join(".modules.yaml").is_file()
+}
+
+/// Node binary staged next to the bundled core by the release build.
+fn bundled_node_binary(bundled: &Path) -> PathBuf {
+    let resources = bundled.parent().unwrap_or(bundled).to_path_buf();
+    node_binary_path(&resources.join("runtime").join("node"))
+}
+
+/// pnpm entry staged next to the bundled core by the release build.
+fn bundled_pnpm_entry(bundled: &Path) -> PathBuf {
+    let resources = bundled.parent().unwrap_or(bundled).to_path_buf();
+    resources.join("runtime").join("pnpm").join("pnpm.cjs")
+}
+
+/// Compose the bundled-core RuntimePaths: the core runs in place from the
+/// (signature-sealed) installer resources, with the staged Node runtime and a
+/// pnpm shim wired into the writable runtime for offline `dsh plugin` use.
+fn bundled_core_runtime<F>(bundled: &Path, progress: &F) -> Result<RuntimePaths, String>
+where
+    F: Fn(ProvisionEvent) + Send + Sync,
+{
+    let app_root = app_data_root()?;
+    let runtime_root = app_root.join("runtime");
+    let isolated_home = app_root.join("dsh-home");
+    let user_home = resolve_user_home(&isolated_home);
+    let dsh_home = user_home.path.clone();
+
+    let mut node_binary = bundled_node_binary(bundled);
+    if !node_binary.is_file() {
+        // The staged runtime is the offline contract; a host toolchain keeps
+        // machines bootable when it is absent anyway.
+        let toolchain = scan_host_toolchain(
+            &node_binary_path(&runtime_root.join("node")),
+            &pnpm_binary_path(&runtime_root.join("pnpm-global")),
+        );
+        node_binary = toolchain
+            .node
+            .ok_or_else(|| "bundled Node runtime missing and no host Node found".to_string())?;
+        boot_log::info("bundled Node runtime missing; falling back to host Node");
+    }
+
+    let pnpm_binary = match stage_bundled_pnpm(bundled, &runtime_root, &node_binary) {
+        Ok(shim) => shim,
+        Err(error) => {
+            boot_log::info(&format!("bundled pnpm shim skipped: {error}"));
+            pnpm_binary_path(&runtime_root.join("pnpm-global"))
+        }
+    };
+
+    let cli_entry = bundled.join("apps").join("cli").join("lib").join("bin.js");
+    let manifest_path = runtime_root.join("manifest.json");
+    if let Err(error) = write_manifest(&manifest_path, bundled, &node_binary, bundled, &cli_entry) {
+        boot_log::info(&format!("manifest write skipped: {error}"));
+    }
+    gc_harness_versions(&app_root, &dsh_home);
+    housekeeping(&dsh_home, &app_root);
+
+    boot_log::info(&format!(
+        "bundled core ready: in place node={} pnpm={}",
+        node_binary.display(),
+        pnpm_binary.display()
+    ));
+    progress(ProvisionEvent::Status(
+        i18n::t(Msg::StatusRuntimeReady).into(),
+    ));
+    progress(ProvisionEvent::Progress(100));
+
+    Ok(RuntimePaths {
+        node_binary,
+        pnpm_binary,
+        cli_entry,
+        harness_root: bundled.to_path_buf(),
+        runtime_root,
+        dsh_home,
+    })
+}
+
+/// Wire the staged pnpm entry into the writable runtime so the path bridge
+/// resolves `dsh plugin` pnpm from the bundle without network access.
+fn stage_bundled_pnpm(
+    bundled: &Path,
+    runtime_root: &Path,
+    node_binary: &Path,
+) -> Result<PathBuf, String> {
+    let entry = bundled_pnpm_entry(bundled);
+    if !entry.is_file() {
+        return Err(format!("bundled pnpm entry missing: {}", entry.display()));
+    }
+    let home = runtime_root.join("pnpm-global");
+    let bin_dir = home.join("bin");
+    fs::create_dir_all(&bin_dir).map_err(|e| recoverable_message("create pnpm bin", &bin_dir, e))?;
+    let shim = pnpm_binary_path(&home);
+    let script = pnpm_shim_script(node_binary, &entry);
+    let stale = match fs::read_to_string(&shim) {
+        Ok(existing) => existing != script,
+        Err(_) => true,
+    };
+    if stale {
+        fs::write(&shim, script).map_err(|e| recoverable_message("write pnpm shim", &shim, e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&shim, fs::Permissions::from_mode(0o755));
+        }
+    }
+    Ok(shim)
+}
+
+fn pnpm_shim_script(node_binary: &Path, pnpm_entry: &Path) -> String {
+    #[cfg(windows)]
+    {
+        format!("@\"{}\" \"{}\" %*\r\n", node_binary.display(), pnpm_entry.display())
+    }
+    #[cfg(not(windows))]
+    {
+        format!(
+            "#!/bin/sh\nexec \"{}\" \"{}\" \"$@\"\n",
+            node_binary.display(),
+            pnpm_entry.display()
+        )
+    }
+}
+
+/// Freeze a provisioned harness tree read-only so neither plugins, updates,
+/// nor a crash can mutate the verified core at runtime. Best-effort: entries
+/// that refuse the change are skipped, and symlinked entries are left alone
+/// (their targets are visited by the walk itself).
+#[cfg(unix)]
+pub fn freeze_harness_tree(root: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    fn walk(dir: &Path) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else { continue };
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if file_type.is_dir() {
+                walk(&path);
+            }
+            if let Ok(metadata) = fs::symlink_metadata(&path) {
+                let mut permissions = metadata.permissions();
+                permissions.set_mode(permissions.mode() & !0o222);
+                let _ = fs::set_permissions(&path, permissions);
+            }
+        }
+    }
+
+    // Already frozen on a previous boot: skip the walk.
+    if let Ok(metadata) = fs::symlink_metadata(root) {
+        if metadata.permissions().mode() & 0o222 == 0 {
+            return;
+        }
+    }
+    walk(root);
+    if let Ok(metadata) = fs::symlink_metadata(root) {
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(permissions.mode() & !0o222);
+        let _ = fs::set_permissions(root, permissions);
+    }
+    boot_log::info(&format!("harness core frozen read-only: {}", root.display()));
+}
+
+/// Restore owner write bits so a stale frozen tree can be repaired or
+/// removed. Best-effort.
+#[cfg(unix)]
+pub fn unfreeze_harness_tree(root: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    fn walk(dir: &Path) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else { continue };
+            if file_type.is_symlink() {
+                continue;
+            }
+            let path = entry.path();
+            if file_type.is_dir() {
+                walk(&path);
+            }
+            if let Ok(metadata) = fs::symlink_metadata(&path) {
+                let mut permissions = metadata.permissions();
+                permissions.set_mode(permissions.mode() | 0o222);
+                let _ = fs::set_permissions(&path, permissions);
+            }
+        }
+    }
+    walk(root);
+    if let Ok(metadata) = fs::symlink_metadata(root) {
+        let mut permissions = metadata.permissions();
+        permissions.set_mode(permissions.mode() | 0o222);
+        let _ = fs::set_permissions(root, permissions);
+    }
+}
+
+#[cfg(not(unix))]
+pub fn freeze_harness_tree(_root: &Path) {}
+
+#[cfg(not(unix))]
+pub fn unfreeze_harness_tree(_root: &Path) {}
+
+/// Boot-time housekeeping for the memory and watchdog surfaces: expire stale
+/// watchdog workspaces, cap runaway logs, and expire chronicle memory
+/// summaries. Everything is best-effort; failures are logged and skipped.
+fn housekeeping(dsh_home: &Path, app_root: &Path) {
+    expire_watchdog_workspaces(dsh_home);
+    cap_watchdog_logs(dsh_home);
+    expire_chronicle_summaries(app_root);
+}
+
+/// Watchdog workspaces and chronicle summaries older than this many days are
+/// expired by boot-time housekeeping.
+const HOUSEKEEPING_TTL_DAYS: u64 = 30;
+/// Watchdog logs beyond this size are truncated to their final mebibyte.
+const WATCHDOG_LOG_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+fn expire_watchdog_workspaces(dsh_home: &Path) {
+    let root = dsh_home.join("watchdog-workspaces");
+    let Ok(entries) = fs::read_dir(&root) else { return };
+    // Governance registration protects workspaces the desktop still owns; an
+    // unreadable registry skips expiry entirely, mirroring the harness GC.
+    let Ok(registered) = registered_workspace_paths(dsh_home) else { return };
+    let cutoff = SystemTime::now() - Duration::from_secs(HOUSEKEEPING_TTL_DAYS * 24 * 3600);
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if registered.iter().any(|workspace| path_eq(workspace, &path)) {
+            continue;
+        }
+        let Ok(metadata) = fs::metadata(&path) else { continue };
+        let Ok(modified) = metadata.modified() else { continue };
+        if modified >= cutoff {
+            continue;
+        }
+        let removed = if metadata.is_dir() {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        };
+        match removed {
+            Ok(()) => {
+                boot_log::info(&format!("housekeeping: expired stale workspace {}", path.display()))
+            }
+            Err(error) => boot_log::info(&format!(
+                "housekeeping: workspace expiry skipped {}: {error}",
+                path.display()
+            )),
+        }
+    }
+}
+
+fn cap_watchdog_logs(dsh_home: &Path) {
+    let root = dsh_home.join("watchdog-workspaces");
+    let Ok(entries) = fs::read_dir(&root) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.extension().is_some_and(|ext| ext == "log") {
+            continue;
+        }
+        let Ok(metadata) = fs::metadata(&path) else { continue };
+        if metadata.len() <= WATCHDOG_LOG_MAX_BYTES {
+            continue;
+        }
+        let keep: usize = 1024 * 1024;
+        let Ok(data) = fs::read(&path) else { continue };
+        let start = data.len().saturating_sub(keep);
+        let tail = data[start..].to_vec();
+        if fs::write(&path, &tail).is_ok() {
+            boot_log::info(&format!(
+                "housekeeping: capped log {} to its final {} MiB",
+                path.display(),
+                keep / 1048576
+            ));
+        }
+    }
+}
+
+fn expire_chronicle_summaries(app_root: &Path) {
+    let openviking = match std::env::var("CLAWMASTER_OPENVIKING_HOME") {
+        Ok(home) => PathBuf::from(home),
+        Err(_) => {
+            let Some(parent) = app_root.parent() else { return };
+            parent.join("ClawMaster").join("OpenViking")
+        }
+    };
+    let chronicle = openviking
+        .join("data")
+        .join("viking")
+        .join("clawmaster")
+        .join("resources")
+        .join("codex-memory-archive")
+        .join("extensions")
+        .join("chronicle")
+        .join("resources");
+    let Ok(entries) = fs::read_dir(&chronicle) else { return };
+    let cutoff = SystemTime::now() - Duration::from_secs(HOUSEKEEPING_TTL_DAYS * 24 * 3600);
+    let mut removed = 0usize;
+    for entry in entries.flatten() {
+        if !entry.file_type().is_ok_and(|file_type| file_type.is_dir()) {
+            continue;
+        }
+        if !entry.file_name().to_string_lossy().ends_with("-10min-memory-summary") {
+            continue;
+        }
+        let Ok(metadata) = fs::metadata(entry.path()) else { continue };
+        let Ok(modified) = metadata.modified() else { continue };
+        if modified >= cutoff {
+            continue;
+        }
+        if fs::remove_dir_all(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        boot_log::info(&format!(
+            "housekeeping: expired {removed} chronicle summaries older than {HOUSEKEEPING_TTL_DAYS} days"
+        ));
     }
 }
 
