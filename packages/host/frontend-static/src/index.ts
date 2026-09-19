@@ -13,6 +13,7 @@
  */
 
 import type { ServerResponse } from 'node:http'
+import { createHash, randomBytes } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { dirname, extname, join, normalize, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -59,6 +60,52 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
 ])
 
 /**
+ * Restrict executable page resources to local assets and exact inline blocks.
+ *
+ * The policy deliberately keeps `'unsafe-eval'` in `script-src` (the client
+ * module system compiles `!!js` patch expressions with `new Function` at boot)
+ * and ships `'unsafe-inline'` styles **without** a nonce or hash source: a
+ * present nonce/hash would silently disable `'unsafe-inline'` per the CSP
+ * spec, and every plugin injects its stylesheets as runtime `<style>`
+ * elements that can never carry the page nonce. Dropping the nonce there was
+ * the fix for plugin layouts collapsing into the page flow.
+ */
+function pageContentSecurityPolicy(html: string, scriptNonce: string): string {
+  const hashes = (tag: 'script' | 'style'): string[] => {
+    const expression = tag === 'script'
+      ? /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu
+      : /<style\b([^>]*)>([\s\S]*?)<\/style\s*>/giu
+    const values = new Set<string>()
+    for (const match of html.matchAll(expression)) {
+      const attributes = match[1] ?? ''
+      const content = match[2] ?? ''
+      if (tag === 'script' && /(?:^|\s)src\s*=/iu.test(attributes)) continue
+      const digest = createHash('sha256').update(content.replace(/\r\n?/gu, '\n')).digest('base64')
+      values.add(`'sha256-${digest}'`)
+    }
+    return [...values]
+  }
+  const scriptHashes = hashes('script')
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' 'nonce-${scriptNonce}' ${scriptHashes.join(' ')}`.trim(),
+    'script-src-attr \'none\'',
+    "style-src 'self' 'unsafe-inline'",
+    "style-src-attr 'unsafe-inline'",
+    "connect-src 'self'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "media-src 'self' data: blob:",
+    "worker-src 'self' blob:",
+    "frame-src 'self' blob:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ')
+}
+
+/**
  * Serve one GET/HEAD static request from the dist root.
  * @param pathname - decoded URL pathname of the request.
  * @param res - the node:http response to write.
@@ -84,11 +131,18 @@ export async function serveStatic(
   }
   let body: string | Buffer
   let type: string
+  let contentSecurityPolicy: string | undefined
   try {
     if (target === distRoot || target === distIndex) {
       if (!authorizeIndex()) return
+      const styleNonce = randomBytes(18).toString('base64')
+      const scriptNonce = randomBytes(18).toString('base64')
       body = await renderIndex()
+      const head = /<head(?:\s[^>]*)?>/iu
+      if (!head.test(body)) throw new Error('Rendered index must contain a head element for runtime nonces.')
+      body = body.replace(head, open => `${open}<meta name="dsh-style-nonce" content="${styleNonce}"><meta name="dsh-script-nonce" content="${scriptNonce}">`)
       type = HTML_MIME
+      contentSecurityPolicy = pageContentSecurityPolicy(body, scriptNonce)
     } else {
       body = await readFile(target)
       type = MIME[extname(target)] ?? 'application/octet-stream'
@@ -101,7 +155,10 @@ export async function serveStatic(
     res.end()
     return
   }
-  res.writeHead(200, { 'content-type': type })
+  res.writeHead(200, {
+    'content-type': type,
+    ...(contentSecurityPolicy === undefined ? {} : { 'content-security-policy': contentSecurityPolicy }),
+  })
   res.end(body)
 }
 
