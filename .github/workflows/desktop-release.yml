@@ -162,20 +162,27 @@ jobs:
           # Link-preserving copy: the installed core's virtual-store symlinks
           # are load-bearing, dereferencing them explodes on circular pairs.
           # mktemp pre-creates the directory, so the payload lands INSIDE it.
-          cp -R apps/desktop-tauri/bundled/harness "$smokeRoot/harness"
+          payloadRoot="$smokeRoot/harness"
+          cp -R apps/desktop-tauri/bundled/harness "$payloadRoot"
           trap 'rm -rf "$smokeRoot"' EXIT
           # A dereferenced or partial copy silently loses the links the core
           # needs to resolve, so fail here rather than in a confusing boot error.
           sourceLinks="$(find apps/desktop-tauri/bundled/harness -type l | wc -l | tr -d ' ')"
-          copiedLinks="$(find "$smokeRoot/harness" -type l | wc -l | tr -d ' ')"
+          copiedLinks="$(find "$payloadRoot" -type l | wc -l | tr -d ' ')"
           if [ "$sourceLinks" != "$copiedLinks" ]; then
             echo "::error::smoke copy lost symlinks: payload=$sourceLinks copy=$copiedLinks"
             exit 1
           fi
-          cd "$smokeRoot/harness"
+          # Both smoke suites resolve the installed tree from this variable, so it
+          # names the payload root itself, never the mktemp wrapper around it.
+          if [ ! -f "$payloadRoot/desktop-defaults.mjs" ]; then
+            echo "::error::smoke payload root $payloadRoot does not hold the installed core"
+            exit 1
+          fi
+          cd "$payloadRoot"
           pnpm install --prod --frozen-lockfile
           cd "$GITHUB_WORKSPACE"
-          DSH_DESKTOP_SMOKE_ROOT="$smokeRoot" node --test apps/desktop-tauri/scripts/desktop-plugin-install.test.mjs apps/desktop-tauri/scripts/harness-startup.test.mjs
+          DSH_DESKTOP_SMOKE_ROOT="$payloadRoot" node --test apps/desktop-tauri/scripts/desktop-plugin-install.test.mjs apps/desktop-tauri/scripts/harness-startup.test.mjs
 
       - name: Stage release assets
         shell: pwsh
