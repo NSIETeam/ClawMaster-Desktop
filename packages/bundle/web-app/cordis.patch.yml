@@ -424,14 +424,23 @@
 # `tasks` and `goals`; the reasoning has one home in
 # `.agents/notes/implemented/architecture/2026-08-10-host-plane-ownership-after-presets.md`.
 
+# Token-efficiency defaults: auto conversation compaction, the /compact
+# command, and tool-result pruning ship enabled. The pruner values below are
+# the library defaults restated so deployments can see (and tune) them in one
+# place; thresholdChars gates when a tool result is considered oversized, and
+# head/tailChars keep the opening and closing context of the pruned result.
 - id: compaction-basic
-  disabled: true
+  disabled: false
 
 - id: command-compact
-  disabled: true
+  disabled: false
 
 - id: tool-result-pruner
-  disabled: true
+  disabled: false
+  config:
+    thresholdChars: 8192
+    headChars: 4096
+    tailChars: 1024
 
 # The subagent registry and its backends STAY in the host plane. `subagents` is
 # a process singleton with a cross-session query surface (`listChildren`,
